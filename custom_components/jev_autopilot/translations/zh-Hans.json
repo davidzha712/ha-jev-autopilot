@@ -1,0 +1,151 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "连接 Jev",
+        "description": "Jev Autopilot 询问 TypeSafe Jev 每个房间需要什么，然后执行。可直连 TypeSafe API，或用 OpenRouter：Base URL 填 `https://openrouter.ai/api`，模型填 `typesafe/jev-1.13`。",
+        "data": { "api_key": "API 密钥", "base_url": "Base URL", "model": "模型" },
+        "data_description": {
+          "api_key": "TypeSafe 或 OpenRouter 的 API 密钥。",
+          "base_url": "不含 /v1/systemone 路径。",
+          "model": "每次请求发送的模型名。"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Jev 拒绝了 API 密钥",
+        "description": "输入新的 API 密钥。房间设置保持不变。",
+        "data": { "api_key": "API 密钥" }
+      },
+      "reconfigure": {
+        "title": "修改连接",
+        "description": "API 密钥留空则保留当前密钥。",
+        "data": { "api_key": "API 密钥", "base_url": "Base URL", "model": "模型" }
+      }
+    },
+    "error": { "invalid_auth": "认证无效", "cannot_connect": "连接失败" },
+    "abort": {
+      "single_instance_allowed": "已经配置过，只能有一个实例。",
+      "reauth_successful": "重新认证成功",
+      "reconfigure_successful": "重新配置成功"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "自动驾驶行为",
+        "data": {
+          "preset": "默认档位",
+          "notify_services": "确认通知发送到",
+          "confirm_threshold": "确认阈值",
+          "daily_call_budget": "每日调用预算",
+          "patrol_minutes": "巡检间隔",
+          "brightness_levels": "亮度档位（%）",
+          "color_temp_levels": "色温档位（K）",
+          "heating_levels": "供暖档位（°C）",
+          "house_notes": "全屋备注"
+        },
+        "data_description": {
+          "preset": "Jev 需要多有把握房间才动作。每个房间可单独覆盖。",
+          "notify_services": "手机 App 的 notify 服务。门锁等「先问我」设备只会推送到这里，从不直接控制。",
+          "confirm_threshold": "「先问我」动作被提出前所需的最低概率。",
+          "daily_call_budget": "今天调用达到此数后所有房间暂停。Jev 只按输入 token 计费。",
+          "patrol_minutes": "传感器变化也会触发重新判断（防抖 30 秒）。",
+          "brightness_levels": "逗号分隔、升序。Jev 在这个刻度上选点。",
+          "color_temp_levels": "逗号分隔的开尔文值，暖到冷。",
+          "heating_levels": "逗号分隔；第一个值可以是 `off`。",
+          "house_notes": "用大白话写全家习惯，例如「我们 23:30 左右睡觉；22 点后不要强光。」"
+        }
+      }
+    },
+    "error": { "invalid_levels": "至少填两个用逗号分隔的数字。" }
+  },
+  "config_subentries": {
+    "room": {
+      "entry_type": "房间",
+      "initiate_flow": { "user": "添加房间" },
+      "step": {
+        "user": {
+          "title": "添加房间",
+          "description": "选择这个房间控制哪些设备、参考哪些传感器。「先问我」里的设备只会推送到手机征求确认。",
+          "data": {
+            "name": "名称",
+            "area": "区域",
+            "lights": "灯",
+            "switches": "开关",
+            "fans": "风扇",
+            "climates": "温控器",
+            "media_players": "媒体播放器（只会关闭）",
+            "confirm_entities": "先问我（门锁、高风险插座）",
+            "context_entities": "环境传感器",
+            "yield_automations": "要接管的自动化",
+            "room_notes": "房间备注"
+          },
+          "data_description": {
+            "context_entities": "人体、在场、照度、温度、门窗传感器。变化会触发重新判断。",
+            "yield_automations": "自动驾驶接管期间关闭，停止或失败时重新打开。",
+            "room_notes": "用大白话写这个房间的习惯，例如「18 点前办公，晚上要暖光」。"
+          }
+        },
+        "reconfigure": {
+          "title": "编辑房间",
+          "data": {
+            "name": "名称",
+            "area": "区域",
+            "lights": "灯",
+            "switches": "开关",
+            "fans": "风扇",
+            "climates": "温控器",
+            "media_players": "媒体播放器（只会关闭）",
+            "confirm_entities": "先问我（门锁、高风险插座）",
+            "context_entities": "环境传感器",
+            "yield_automations": "要接管的自动化",
+            "room_notes": "房间备注"
+          }
+        }
+      },
+      "error": {
+        "no_entities": "至少选择一个要控制的设备。",
+        "duplicate_entity": "同一设备只能出现在一个列表里。"
+      },
+      "abort": { "reconfigure_successful": "重新配置成功" }
+    }
+  },
+  "selector": {
+    "preset": {
+      "options": {
+        "conservative": "保守：非常有把握才动作",
+        "balanced": "均衡",
+        "aggressive": "积极：早动作、快退让"
+      }
+    }
+  },
+  "entity": {
+    "switch": { "autopilot": { "name": "自动驾驶" } },
+    "select": {
+      "preset": {
+        "name": "档位",
+        "state": { "conservative": "保守", "balanced": "均衡", "aggressive": "积极" }
+      }
+    },
+    "sensor": {
+      "last_decision": { "name": "最近决策" },
+      "status": {
+        "name": "状态",
+        "state": { "ok": "正常", "disabled": "已关闭", "degraded": "已降级", "paused": "暂停（预算）" }
+      },
+      "overrides_today": { "name": "今日手动覆盖" },
+      "calls_today": { "name": "今日调用" },
+      "cost_today": { "name": "今日费用" }
+    }
+  },
+  "issues": {
+    "budget_reached": {
+      "title": "Jev Autopilot 已达每日预算",
+      "description": "今天调用 {budget} 次后所有房间已暂停，午夜前由你的自动化接管。经常发生的话请在集成选项里调高预算。"
+    },
+    "room_degraded": {
+      "title": "Jev Autopilot 已交还 {room}",
+      "description": "连续三次调用失败（{error}）。被接管的自动化已恢复运行。下次调用成功后房间会自动重新接管。"
+    }
+  }
+}

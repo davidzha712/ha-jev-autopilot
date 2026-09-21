@@ -40,8 +40,8 @@ config entry (API key, base_url, model)          options: preset, notify targets
   (default `jev-latest`). A one-question call validates the key. Single instance.
 - **Reauth** on HTTP 401, **reconfigure** for key/base URL/model.
 - **Options:** default preset, notify services for confirmations, confirm threshold
-  (default 0.90, floor 0.80), daily call budget (default 2000), patrol interval
-  (default 5 min, floor 2), brightness levels (default `10,30,50,75,100`),
+  (default 0.90, floor 0.80), daily call budget (default 3000), patrol interval
+  (default 10 min, floor 2), brightness levels (default `10,30,50,75,100`),
   colour-temperature levels (default `2700,3500,4000`), heating levels
   (default `off,17,20,22`), house notes (free text sent with every state).
 - **Room subentry:** name, optional area, lights, switches, fans, climates, media

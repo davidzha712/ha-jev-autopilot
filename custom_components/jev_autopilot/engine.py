@@ -162,7 +162,9 @@ def _heating_words(level: str) -> str:
 
 def parse_int_levels(text: str) -> tuple[int, ...]:
     """Parse `10, 30, 50` into sorted unique ints. Raises ValueError."""
-    values = sorted({int(part) for part in text.replace(";", ",").split(",") if part.strip()})
+    values = sorted(
+        {int(part) for part in text.replace(";", ",").split(",") if part.strip()}
+    )
     if len(values) < 2:
         raise ValueError("need at least two levels")
     return tuple(values)
@@ -253,7 +255,10 @@ def build_plan(room: str, entities: Sequence[EntitySnapshot], levels: Levels) ->
                     entity,
                     Score(
                         f"If the light {label} is on, how bright should it be right now?",
-                        [f"{pct}%: {_brightness_words(pct)}" for pct in levels.brightness],
+                        [
+                            f"{pct}%: {_brightness_words(pct)}"
+                            for pct in levels.brightness
+                        ],
                     ),
                 )
             if entity.supports_color_temp:
@@ -369,7 +374,10 @@ def _plain(got: Mapping[str, Answer]) -> dict[str, Any]:
         elif isinstance(answer, ScoreAnswer):
             out[kind] = round(answer.score, 3)
         elif isinstance(answer, ChoiceAnswer):
-            out[kind] = {"choice": answer.choice, "confidence": round(answer.confidence, 3)}
+            out[kind] = {
+                "choice": answer.choice,
+                "confidence": round(answer.confidence, 3),
+            }
     return out
 
 
@@ -419,7 +427,12 @@ def _decide_confirm(
         )
     if p <= 1 - threshold and entity.state == "on":
         return Action(
-            entity.entity_id, entity.domain, "turn_off", {}, f"p(on)={p:.2f}", confirm=True
+            entity.entity_id,
+            entity.domain,
+            "turn_off",
+            {},
+            f"p(on)={p:.2f}",
+            confirm=True,
         )
     return None
 
@@ -454,7 +467,11 @@ def _decide_light(
     if isinstance(ct, ChoiceAnswer) and ct.confidence >= COLOR_TEMP_MIN_CONFIDENCE:
         kelvin = int(ct.choice.rstrip("K"))
         current_k = entity.color_temp_k
-        if turn_on or current_k is None or abs(kelvin - current_k) >= COLOR_TEMP_DEADBAND_K:
+        if (
+            turn_on
+            or current_k is None
+            or abs(kelvin - current_k) >= COLOR_TEMP_DEADBAND_K
+        ):
             data["color_temp_kelvin"] = kelvin
             reasons.append(f"colour {kelvin}K")
     if not turn_on and not data:
