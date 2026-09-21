@@ -1,0 +1,240 @@
+"""The decide-act loop against a real hass core and a fake Jev."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.core import Context, HomeAssistant, ServiceCall
+from homeassistant.helpers import issue_registry as ir
+from jevclient import JevAuthError, JevConnectionError, NoulAnswer
+from pytest_homeassistant_custom_component.common import async_mock_service
+
+from custom_components.jev_autopilot.const import CONF_BUDGET, DOMAIN
+
+from .conftest import DEFAULT_ROOM, make_entry, room
+
+
+@pytest.fixture
+async def calls(hass: HomeAssistant) -> dict[str, list[ServiceCall]]:
+    hass.states.async_set("light.ceiling", "off", {"supported_color_modes": ["onoff"]})
+    hass.states.async_set("lock.front", "unlocked")
+    hass.states.async_set("binary_sensor.motion", "on")
+    hass.states.async_set("automation.old_lights", "on")
+    light: list[ServiceCall] = []
+
+    async def light_service(call: ServiceCall) -> None:
+        light.append(call)
+        state = "on" if call.service == "turn_on" else "off"
+        for entity_id in (
+            call.data["entity_id"]
+            if isinstance(call.data["entity_id"], list)
+            else [call.data["entity_id"]]
+        ):
+            hass.states.async_set(
+                entity_id,
+                state,
+                {"supported_color_modes": ["onoff"]},
+                context=call.context,
+            )
+
+    hass.services.async_register("light", "turn_on", light_service)
+    hass.services.async_register("light", "turn_off", light_service)
+    return {
+        "light": light,
+        "lock": async_mock_service(hass, "lock", "lock"),
+        "notify": async_mock_service(hass, "notify", "phone"),
+        "auto_off": async_mock_service(hass, "automation", "turn_off"),
+        "auto_on": async_mock_service(hass, "automation", "turn_on"),
+    }
+
+
+async def setup(hass: HomeAssistant, **options: Any):
+    entry = make_entry(room(**DEFAULT_ROOM), **options)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    (controller,) = entry.runtime_data.rooms.values()
+    return entry, controller
+
+
+async def test_setup_takes_over_and_creates_entities(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    assert controller.enabled
+    assert [c.data["entity_id"] for c in calls["auto_off"]] == ["automation.old_lights"]
+    assert hass.states.get("switch.living_room_autopilot").state == "on"
+    assert hass.states.get("select.living_room_preset").state == "balanced"
+    assert hass.states.get("sensor.living_room_status").state == "ok"
+    assert hass.states.get("sensor.jev_autopilot_calls_today").state == "0"
+
+
+async def test_run_acts_directly_and_proposes_lock(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    await controller.async_run()
+    await hass.async_block_till_done()
+    assert [c.service for c in calls["light"]] == ["turn_on"]
+    assert calls["lock"] == []
+    (note,) = calls["notify"]
+    actions = [a["action"] for a in note.data["data"]["actions"]]
+    assert actions[0].startswith("JEVAP_RUN_") and actions[1].startswith("JEVAP_SKIP_")
+    state, _ = jev.calls[-1]
+    assert "light.ceiling" not in state and "lock.front" not in state
+    decision = hass.states.get("sensor.living_room_last_decision")
+    assert "light.turn_on light.ceiling" in decision.state
+    assert hass.states.get("sensor.jev_autopilot_calls_today").state == "1"
+    # Our own change is not a manual override.
+    assert hass.states.get("sensor.living_room_manual_overrides_today").state == "0"
+
+
+async def test_confirm_run_executes(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    await controller.async_run()
+    await hass.async_block_till_done()
+    run = calls["notify"][0].data["data"]["actions"][0]["action"]
+    hass.bus.async_fire("mobile_app_notification_action", {"action": run})
+    await hass.async_block_till_done()
+    assert [c.data["entity_id"] for c in calls["lock"]] == ["lock.front"]
+    # A second tap on the same token does nothing.
+    hass.bus.async_fire("mobile_app_notification_action", {"action": run})
+    await hass.async_block_till_done()
+    assert len(calls["lock"]) == 1
+
+
+async def test_confirm_skip_suppresses(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    await controller.async_run()
+    await hass.async_block_till_done()
+    skip = calls["notify"][0].data["data"]["actions"][1]["action"]
+    hass.bus.async_fire("mobile_app_notification_action", {"action": skip})
+    await hass.async_block_till_done()
+    sent = len(calls["notify"])
+    await controller.async_run()
+    await hass.async_block_till_done()
+    assert calls["lock"] == []
+    assert len(calls["notify"]) == sent  # no new proposal while suppressed
+    assert any("vetoed" in row for row in entry.runtime_data.log)
+
+
+async def test_pending_proposal_is_not_repeated(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    await controller.async_run()
+    await controller.async_run()
+    await hass.async_block_till_done()
+    assert len(calls["notify"]) == 1
+
+
+async def test_manual_override_holds(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    jev.policy["on"] = NoulAnswer(0.02)
+    hass.states.async_set(
+        "light.ceiling", "on", {"supported_color_modes": ["onoff"]}, context=Context()
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.living_room_manual_overrides_today").state == "1"
+    await controller.async_run()
+    await hass.async_block_till_done()
+    assert calls["light"] == []
+
+
+async def test_degrade_and_recover(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    jev.error = JevConnectionError("down")
+    for _ in range(3):
+        await controller.async_run()
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.living_room_status").state == "degraded"
+    assert [c.data["entity_id"] for c in calls["auto_on"]] == ["automation.old_lights"]
+    registry = ir.async_get(hass)
+    issue_id = f"degraded_{controller.subentry_id}"
+    assert registry.async_get_issue(DOMAIN, issue_id) is not None
+    assert any("Jev unreachable" in c.data["message"] for c in calls["notify"])
+    # Each failed run retried once.
+    assert len(jev.calls) == 6
+
+    jev.error = None
+    await controller.async_run()
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.living_room_status").state == "ok"
+    assert registry.async_get_issue(DOMAIN, issue_id) is None
+    assert len(calls["auto_off"]) == 2
+
+
+async def test_auth_error_starts_reauth(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    jev.error = JevAuthError("revoked")
+    await controller.async_run()
+    await hass.async_block_till_done()
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert [f["context"]["source"] for f in flows] == ["reauth"]
+    before = len(jev.calls)
+    await controller.async_run()
+    assert len(jev.calls) == before  # no more calls until the key is fixed
+    assert [c.data["entity_id"] for c in calls["auto_on"]] == ["automation.old_lights"]
+    assert hass.states.get("sensor.living_room_status").state == "degraded"
+
+
+async def test_budget_pauses(hass, jev, calls) -> None:
+    entry, controller = await setup(hass, **{CONF_BUDGET: 1})
+    await controller.async_run()
+    await controller.async_run()
+    await hass.async_block_till_done()
+    assert len(jev.calls) == 1
+    assert hass.states.get("sensor.living_room_status").state == "paused"
+    assert ir.async_get(hass).async_get_issue(DOMAIN, "budget_reached") is not None
+    # Paused rooms hand the house back to its automations...
+    assert [c.data["entity_id"] for c in calls["auto_on"]] == ["automation.old_lights"]
+    # ...and take it again once a new day resets the count.
+    takes = len(calls["auto_off"])
+    runtime = entry.runtime_data
+    runtime._day = None
+    await controller.async_run()
+    await hass.async_block_till_done()
+    assert len(calls["auto_off"]) == takes + 1
+    assert hass.states.get("sensor.living_room_status").state == "ok"
+
+
+async def test_switch_off_hands_back(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": "switch.living_room_autopilot"}, blocking=True
+    )
+    assert [c.data["entity_id"] for c in calls["auto_on"]] == ["automation.old_lights"]
+    await controller.async_run()
+    assert jev.calls == []
+    assert hass.states.get("sensor.living_room_status").state == "disabled"
+
+
+async def test_preset_select(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    await hass.services.async_call(
+        "select",
+        "select_option",
+        {"entity_id": "select.living_room_preset", "option": "aggressive"},
+        blocking=True,
+    )
+    assert controller.preset.name == "aggressive"
+
+
+async def test_unload_releases_automations(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    runtime = entry.runtime_data
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.NOT_LOADED
+    assert [c.data["entity_id"] for c in calls["auto_on"]] == ["automation.old_lights"]
+    assert runtime.taken == {}
+
+
+async def test_removing_room_removes_its_device(hass, jev, calls) -> None:
+    from homeassistant.helpers import device_registry as dr
+
+    entry, controller = await setup(hass)
+    registry = dr.async_get(hass)
+    ident = (DOMAIN, controller.subentry_id)
+    assert registry.async_get_device_by_identifier(ident, entry.entry_id) is not None
+    hass.config_entries.async_remove_subentry(entry, controller.subentry_id)
+    await hass.async_block_till_done()
+    assert registry.async_get_device_by_identifier(ident, entry.entry_id) is None
+    assert entry.state is ConfigEntryState.LOADED
+    assert calls["auto_on"], "automation handed back when its room goes"

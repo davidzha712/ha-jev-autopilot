@@ -70,8 +70,12 @@ def test_plan_builds_atomic_questions_without_ids():
 
 def test_plan_skips_unavailable_and_out_of_range_colour():
     narrow = EntitySnapshot(
-        "light.b", "B", "on", supports_color_temp=True,
-        min_color_temp_k=3000, max_color_temp_k=3600,
+        "light.b",
+        "B",
+        "on",
+        supports_color_temp=True,
+        min_color_temp_k=3000,
+        max_color_temp_k=3600,
     )
     gone = EntitySnapshot("switch.x", "X", "unavailable")
     plan = build_plan("hall", [narrow, gone], LEVELS)
@@ -79,11 +83,14 @@ def test_plan_skips_unavailable_and_out_of_range_colour():
 
 
 def test_light_turns_on_with_level_and_colour():
-    d = run([LIGHT], {
-        ("on", "light.a"): NoulAnswer(0.8),
-        ("bri", "light.a"): score(2.5),
-        ("ct", "light.a"): choice("2700K"),
-    })
+    d = run(
+        [LIGHT],
+        {
+            ("on", "light.a"): NoulAnswer(0.8),
+            ("bri", "light.a"): score(2.5),
+            ("ct", "light.a"): choice("2700K"),
+        },
+    )
     (action,) = d.actions
     assert action.service == "turn_on"
     assert action.data == {"brightness_pct": 62, "color_temp_kelvin": 2700}
@@ -103,17 +110,22 @@ def test_light_turns_off_below_threshold():
 
 def test_brightness_deadband():
     on = EntitySnapshot("light.a", "A", "on", brightness_pct=55, supports_brightness=True)
-    small = run([on], {("on", "light.a"): NoulAnswer(0.9), ("bri", "light.a"): score(2.0)})
+    small = run(
+        [on], {("on", "light.a"): NoulAnswer(0.9), ("bri", "light.a"): score(2.0)}
+    )
     assert small.actions == []
     big = run([on], {("on", "light.a"): NoulAnswer(0.9), ("bri", "light.a"): score(4.0)})
     assert big.actions[0].data == {"brightness_pct": 100}
 
 
 def test_low_confidence_colour_ignored():
-    d = run([LIGHT], {
-        ("on", "light.a"): NoulAnswer(0.9),
-        ("ct", "light.a"): choice("4000K", confidence=0.4),
-    })
+    d = run(
+        [LIGHT],
+        {
+            ("on", "light.a"): NoulAnswer(0.9),
+            ("ct", "light.a"): choice("4000K", confidence=0.4),
+        },
+    )
     assert "color_temp_kelvin" not in d.actions[0].data
 
 
@@ -138,15 +150,22 @@ def test_preset_changes_threshold():
 def test_switch_and_fan_toggle():
     sw = EntitySnapshot("switch.fan", "Fan plug", "off")
     fan = EntitySnapshot("fan.b", "Fan", "on")
-    d = run([sw, fan], {("on", "switch.fan"): NoulAnswer(0.9), ("on", "fan.b"): NoulAnswer(0.1)})
+    d = run(
+        [sw, fan],
+        {("on", "switch.fan"): NoulAnswer(0.9), ("on", "fan.b"): NoulAnswer(0.1)},
+    )
     assert {(a.entity_id, a.service) for a in d.actions} == {
-        ("switch.fan", "turn_on"), ("fan.b", "turn_off")
+        ("switch.fan", "turn_on"),
+        ("fan.b", "turn_off"),
     }
 
 
 def test_media_player_only_off():
     tv = EntitySnapshot("media_player.tv", "TV", "playing")
-    assert run([tv], {("off", "media_player.tv"): NoulAnswer(0.9)}).actions[0].service == "turn_off"
+    assert (
+        run([tv], {("off", "media_player.tv"): NoulAnswer(0.9)}).actions[0].service
+        == "turn_off"
+    )
     tv_off = EntitySnapshot("media_player.tv", "TV", "off")
     assert run([tv_off], {("off", "media_player.tv"): NoulAnswer(0.0)}).actions == []
 
@@ -177,7 +196,9 @@ def test_blocked_proposal_skipped():
 
 
 def test_climate_rules():
-    trv = EntitySnapshot("climate.t", "TRV", "heat", target_temp=20.0, hvac_modes=("off", "heat"))
+    trv = EntitySnapshot(
+        "climate.t", "TRV", "heat", target_temp=20.0, hvac_modes=("off", "heat")
+    )
     assert run([trv], {("heat", "climate.t"): choice("20")}).actions == []
     assert run([trv], {("heat", "climate.t"): choice("22", 0.5)}).actions == []
     (a,) = run([trv], {("heat", "climate.t"): choice("17")}).actions
