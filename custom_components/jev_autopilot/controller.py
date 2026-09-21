@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import logging
 import time
 from collections import deque
@@ -72,7 +73,7 @@ from .engine import (
     parse_heating_levels,
     parse_int_levels,
 )
-from .state import build_state, snapshot
+from .state import build_state, resident_names, scrub, snapshot
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigSubentry
@@ -173,6 +174,11 @@ class RoomController:
     @property
     def controlled(self) -> list[str]:
         return self.direct_entities + self.confirm_entities
+
+    @property
+    def stopped(self) -> bool:
+        """True once the room has been unloaded or removed."""
+        return self._stopped
 
     @property
     def in_control(self) -> bool:
@@ -327,7 +333,17 @@ class RoomController:
             for entity_id in self.controlled
             if (snap := snapshot(self.hass, entity_id, confirm=entity_id in confirm))
         ]
-        plan = build_plan(self.name, snapshots, self.levels)
+        # Question text leaves the house too, so names are scrubbed there as well.
+        # The unscrubbed snapshots stay for deciding and for the phone notification.
+        residents = resident_names(self.hass)
+        plan = build_plan(
+            scrub(self.name, residents),
+            [
+                dataclasses.replace(snap, name=scrub(snap.name, residents))
+                for snap in snapshots
+            ],
+            self.levels,
+        )
         if not plan.questions:
             return
         state = build_state(
@@ -365,6 +381,9 @@ class RoomController:
         if not self.enabled or self._stopped:
             return
         await self._succeeded()
+        # A success clears degraded; a pause or auth failure meanwhile still holds.
+        if not self.in_control:
+            return
 
         now = time.time()
         self.history.blocked = self.runtime.blocked_keys(now)
@@ -515,27 +534,33 @@ class RoomController:
                 state = self.hass.states.get(automation)
                 if state is None or state.state != "on":
                     continue
-                await self._call_automation("turn_off", automation)
+                # Recorded before the call: if the call is cancelled or the room
+                # stops mid-flight, release still knows to turn it back on.
                 taken = self.runtime.taken.setdefault(self.subentry_id, [])
                 if automation not in taken:
                     taken.append(automation)
                 self.runtime.async_save()
+                if not await self._call_automation("turn_off", automation):
+                    taken.remove(automation)
+                    self.runtime.async_save()
 
     async def _release_automations(self) -> None:
-        if not self.runtime.taken.get(self.subentry_id):
-            return
         if not self._stopped and self._when_started(self._release_automations):
             return
         async with self._automations_lock:
-            await self.runtime.async_release(self.subentry_id)
+            # Checked under the lock: a take in flight may still be recording.
+            if self.runtime.taken.get(self.subentry_id):
+                await self.runtime.async_release(self.subentry_id)
 
-    async def _call_automation(self, service: str, entity_id: str) -> None:
+    async def _call_automation(self, service: str, entity_id: str) -> bool:
         try:
             await self.hass.services.async_call(
                 "automation", service, {"entity_id": entity_id}, blocking=True
             )
         except HomeAssistantError as err:
             _LOGGER.warning("automation.%s %s failed: %s", service, entity_id, err)
+            return False
+        return True
 
     @callback
     def _notify_entities(self) -> None:

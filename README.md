@@ -41,8 +41,10 @@ detection and the confirmation tier all live in plain Python with tests.
 - **Private by construction.** The text sent to Jev contains device names, states
   and sensor values. It never contains entity ids, and residents appear only as a
   count ("2 of 3 at home"). Residents' names are replaced with "a resident" and IPv4
-  addresses with "[address]" wherever they turn up, including device names and your
-  notes. Any other personal detail you type into a name or a note is sent as written.
+  addresses with "[address]" wherever they turn up, including device names, room
+  names, the questions themselves and your notes. Matching ignores case. Any other
+  personal detail you type into a name or a note is sent as written. A device without
+  a friendly name is sent under a name Home Assistant derives from its entity id.
 
 ## Installation
 

@@ -153,17 +153,31 @@ def build_state(
         lines.append(f"About the house: {house_notes.strip()}")
     if room_notes.strip():
         lines.append(f"About this room: {room_notes.strip()}")
-    return _scrub("\n".join(lines), [s.name for s in people])
+    return scrub("\n".join(lines), resident_names(hass))
 
 
 _IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 
 
-def _scrub(text: str, residents: Iterable[str]) -> str:
+def resident_names(hass: HomeAssistant) -> list[str]:
+    """Names of the people Home Assistant knows about, to keep them out of prompts."""
+    return [s.name for s in hass.states.async_all("person")]
+
+
+def scrub(text: str, residents: Iterable[str]) -> str:
     """Last line of defence for names users put in friendly names or notes."""
     text = _IPV4.sub("[address]", text)
-    for name in sorted({n for n in residents if n.strip()}, key=len, reverse=True):
-        text = re.sub(rf"\b{re.escape(name)}\b", "a resident", text)
+    for name in sorted(
+        {n.strip() for n in residents if n.strip()}, key=len, reverse=True
+    ):
+        # ASCII-only boundaries: \b treats CJK as word characters, so "张三的卧室"
+        # would never match "张三".
+        text = re.sub(
+            rf"(?<![A-Za-z0-9]){re.escape(name)}(?![A-Za-z0-9])",
+            "a resident",
+            text,
+            flags=re.IGNORECASE,
+        )
     return text
 
 

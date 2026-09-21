@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import Context, HomeAssistant, ServiceCall
+from homeassistant.core import Context, Event, HomeAssistant, ServiceCall
 from homeassistant.helpers import issue_registry as ir
 from jevclient import JevAuthError, JevConnectionError, NoulAnswer
 from pytest_homeassistant_custom_component.common import async_mock_service
@@ -425,3 +425,106 @@ async def test_removing_entry_releases_and_deletes_store(hass, jev, calls) -> No
     await hass.config_entries.async_remove(entry.entry_id)
     await hass.async_block_till_done()
     assert [c.data["entity_id"] for c in calls["auto_on"]] == ["automation.old_lights"]
+
+
+async def test_questions_carry_no_resident_names(hass, jev, calls) -> None:
+    hass.states.async_set("person.alice", "home", {"friendly_name": "Alice"})
+    hass.states.async_set("person.zhang", "home", {"friendly_name": "张三"})
+    hass.states.async_set(
+        "light.ceiling",
+        "off",
+        {"supported_color_modes": ["onoff"], "friendly_name": "张三的台灯"},
+    )
+    hass.states.async_set(
+        "lock.front", "unlocked", {"friendly_name": "Alice's front door"}
+    )
+    entry = make_entry(room("alice room 10.0.0.9", **DEFAULT_ROOM))
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    (controller,) = entry.runtime_data.rooms.values()
+    await controller.async_run()
+    await hass.async_block_till_done()
+    (state, questions), *_ = jev.calls[1:] or jev.calls
+    sent = state + repr(questions)
+    for leak in ("Alice", "alice", "张三", "10.0.0.9"):
+        assert leak not in sent
+    assert "a resident's front door" in sent
+    # The phone is the household's own, so it names the lock as they do.
+    (note,) = calls["notify"]
+    assert "Alice's front door" in note.data["message"]
+
+
+def _hold_turn_off(hass: HomeAssistant, gate: asyncio.Event) -> asyncio.Event:
+    held = asyncio.Event()
+
+    async def turn_off(call: ServiceCall) -> None:
+        held.set()
+        await gate.wait()
+
+    hass.services.async_register("automation", "turn_off", turn_off)
+    return held
+
+
+async def test_switch_off_during_take_still_hands_back(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    await controller.async_set_enabled(False)
+    ons = len(calls["auto_on"])
+    gate = asyncio.Event()
+    held = _hold_turn_off(hass, gate)
+    take = hass.async_create_task(controller.async_set_enabled(True))
+    await asyncio.wait_for(held.wait(), 5)
+    off = hass.async_create_task(controller.async_set_enabled(False))
+    await asyncio.sleep(0)
+    gate.set()
+    await asyncio.wait_for(asyncio.gather(take, off), 5)
+    await hass.async_block_till_done()
+    assert [c.data["entity_id"] for c in calls["auto_on"][ons:]] == [
+        "automation.old_lights"
+    ]
+    assert entry.runtime_data.taken.get(controller.subentry_id, []) == []
+
+
+async def test_unload_during_take_still_hands_back(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    await controller.async_set_enabled(False)
+    ons = len(calls["auto_on"])
+    gate = asyncio.Event()
+    held = _hold_turn_off(hass, gate)
+    take = hass.async_create_task(controller.async_set_enabled(True))
+    await asyncio.wait_for(held.wait(), 5)
+    unload = hass.async_create_task(hass.config_entries.async_unload(entry.entry_id))
+    await asyncio.sleep(0)
+    gate.set()
+    await asyncio.wait_for(asyncio.gather(take, unload), 5)
+    await hass.async_block_till_done()
+    assert [c.data["entity_id"] for c in calls["auto_on"][ons:]] == [
+        "automation.old_lights"
+    ]
+
+
+async def test_failed_turn_off_is_not_recorded(hass, jev, calls) -> None:
+    from homeassistant.exceptions import HomeAssistantError
+
+    entry, controller = await setup(hass)
+    await controller.async_set_enabled(False)
+
+    async def broken(call: ServiceCall) -> None:
+        raise HomeAssistantError("nope")
+
+    hass.services.async_register("automation", "turn_off", broken)
+    await controller.async_set_enabled(True)
+    assert entry.runtime_data.taken.get(controller.subentry_id, []) == []
+
+
+async def test_confirmation_after_unload_does_nothing(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    await controller.async_run()
+    await hass.async_block_till_done()
+    runtime = entry.runtime_data
+    (token,) = runtime.pending
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    # The listener is gone after unload; call the handler as a late tap would.
+    await runtime.async_handle_action(Event("x", {"action": f"JEVAP_RUN_{token}"}))
+    assert calls["lock"] == []

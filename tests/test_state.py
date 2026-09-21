@@ -5,7 +5,7 @@ from __future__ import annotations
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from custom_components.jev_autopilot.state import build_state, snapshot
+from custom_components.jev_autopilot.state import build_state, scrub, snapshot
 
 
 async def test_snapshot_light_and_climate(hass: HomeAssistant) -> None:
@@ -149,3 +149,10 @@ async def test_resident_names_and_addresses_are_scrubbed(hass: HomeAssistant) ->
     assert "203.0.113.7" not in text
     assert "a resident's lamp" in text
     assert "Router: [address]" in text
+
+
+def test_scrub_matches_cjk_and_any_case() -> None:
+    assert scrub("张三的卧室", ["张三"]) == "a resident的卧室"
+    assert scrub("ALICE and alice", ["Alice"]) == "a resident and a resident"
+    # A name inside a longer Latin word is left alone.
+    assert scrub("Alicent", ["Alice"]) == "Alicent"

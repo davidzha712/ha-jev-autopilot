@@ -297,7 +297,7 @@ class Runtime:
                 target,
                 {"message": "clear_notification", "data": {"tag": f"jevap_{token}"}},
             )
-        if pending.expires <= time.time():
+        if pending.expires <= time.time() or pending.room.stopped:
             return
         if run:
             await pending.room.async_execute(pending.action, confirmed=True)
