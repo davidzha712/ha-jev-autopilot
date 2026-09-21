@@ -1,0 +1,5 @@
+# Pin what the harness pins. A mismatch here shows up as unrelated async failures.
+pytest-homeassistant-custom-component==0.13.366
+pytest-cov
+# The same version manifest.json pins. tests/test_manifest.py fails if they drift.
+jevclient==1.2.0

@@ -1,0 +1,46 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ruff:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # src, not paths in args: the action appends the workspace to args, so a
+      # path there makes it lint the whole checkout including the README.
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: check
+          src: "./custom_components ./tests"
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: format --check
+          src: "./custom_components ./tests"
+
+  pytest:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install -r requirements-test.txt
+      - run: pytest --cov=custom_components.jev_autopilot --cov-report=term-missing
+
+  mypy:
+    name: mypy --strict
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install -r requirements-test.txt mypy
+      # Platinum's strict-typing rule. Worth enforcing rather than claiming.
+      - run: mypy --strict --ignore-missing-imports custom_components/jev_autopilot
