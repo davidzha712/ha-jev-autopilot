@@ -6,6 +6,7 @@ not the identities, and the state leaves the house.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 
@@ -152,7 +153,18 @@ def build_state(
         lines.append(f"About the house: {house_notes.strip()}")
     if room_notes.strip():
         lines.append(f"About this room: {room_notes.strip()}")
-    return "\n".join(lines)
+    return _scrub("\n".join(lines), [s.name for s in people])
+
+
+_IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+
+
+def _scrub(text: str, residents: Iterable[str]) -> str:
+    """Last line of defence for names users put in friendly names or notes."""
+    text = _IPV4.sub("[address]", text)
+    for name in sorted({n for n in residents if n.strip()}, key=len, reverse=True):
+        text = re.sub(rf"\b{re.escape(name)}\b", "a resident", text)
+    return text
 
 
 def _first(hass: HomeAssistant, domain: str) -> State | None:

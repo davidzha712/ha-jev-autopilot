@@ -50,6 +50,27 @@ SIGNAL_GLOBAL = f"{DOMAIN}_global"
 MAX_RETRY_WAIT_S = 30.0
 
 
+def entry_store(hass: HomeAssistant, entry_id: str) -> Store[dict[str, Any]]:
+    return Store(hass, 1, f"{DOMAIN}.{entry_id}")
+
+
+async def async_release_stored(hass: HomeAssistant, entry_id: str) -> None:
+    """On entry removal: hand back whatever is still held, then delete the file."""
+    store = entry_store(hass, entry_id)
+    data = await store.async_load() or {}
+    for automations in data.get("taken", {}).values():
+        for automation in automations:
+            if hass.states.get(automation) is None:
+                continue
+            try:
+                await hass.services.async_call(
+                    "automation", "turn_on", {"entity_id": automation}, blocking=True
+                )
+            except HomeAssistantError as err:
+                _LOGGER.warning("automation.turn_on %s failed: %s", automation, err)
+    await store.async_remove()
+
+
 @dataclass
 class Pending:
     action: Action
@@ -77,7 +98,7 @@ class Runtime:
         self.taken: dict[str, list[str]] = {}
         self.presets: dict[str, str] = {}
         self._closed = False
-        self._store: Store[dict[str, Any]] = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}")
+        self._store = entry_store(hass, entry.entry_id)
         self._sleep: Callable[[float], Coroutine[Any, Any, None]] = asyncio.sleep
 
     # --- persistence ---
@@ -112,8 +133,9 @@ class Runtime:
 
     async def async_flush(self) -> None:
         """Final write on unload. Nothing is saved by this Runtime afterwards."""
-        await self._store.async_save(self._data())
+        # Closed before the await, so nothing can schedule a write behind this one.
         self._closed = True
+        await self._store.async_save(self._data())
 
     # --- automations handed back ---
 

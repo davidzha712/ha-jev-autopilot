@@ -18,7 +18,7 @@ from .const import (
     SUBENTRY_ROOM,
 )
 from .controller import RoomController
-from .runtime import Runtime
+from .runtime import Runtime, async_release_stored
 
 PLATFORMS: list[Platform] = [Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
 
@@ -73,3 +73,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: JevAutopilotConfigEntry
             await room.async_stop(release=True)
         await runtime.async_flush()
     return unloaded
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: JevAutopilotConfigEntry) -> None:
+    """Nothing may stay switched off, and the audit log goes with the entry."""
+    await async_release_stored(hass, entry.entry_id)

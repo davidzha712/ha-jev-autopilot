@@ -40,7 +40,9 @@ detection and the confirmation tier all live in plain Python with tests.
   is rejected.
 - **Private by construction.** The text sent to Jev contains device names, states
   and sensor values. It never contains entity ids, and residents appear only as a
-  count ("2 of 3 at home").
+  count ("2 of 3 at home"). Residents' names are replaced with "a resident" and IPv4
+  addresses with "[address]" wherever they turn up, including device names and your
+  notes. Any other personal detail you type into a name or a note is sent as written.
 
 ## Installation
 
@@ -152,6 +154,10 @@ provider's current price; the cost sensor uses the token counts the API returns.
 - Setup does not call the API; a revoked key is caught on the first room check and
   starts re-authentication.
 - Colour (hue) is not controlled, only brightness and colour temperature.
+- A device that reports its new state long after the autopilot's command (a slow
+  light transition, a cloud-polled radiator) can be counted as a manual override and
+  held for the preset's override hold.
+- Removing the entry also deletes its stored decision log.
 
 ## Removal
 

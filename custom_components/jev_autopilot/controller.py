@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import time
 from collections import deque
@@ -132,6 +134,9 @@ class RoomController:
         self.paused = False
         self.auth_failed = False
         self._stopped = False
+        # Runs in flight, so stop can cancel them; take and release never interleave.
+        self._runs: set[asyncio.Task[Any]] = set()
+        self._automations_lock = asyncio.Lock()
         self.failures = 0
         self.history = History()
         self.last: dict[str, Any] = {}
@@ -212,6 +217,13 @@ class RoomController:
             unsub()
         self._unsubs.clear()
         self._debouncer.async_shutdown()
+        current = asyncio.current_task()
+        runs = [task for task in self._runs if task is not current]
+        for task in runs:
+            task.cancel()
+        for task in runs:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         ir.async_delete_issue(self.hass, DOMAIN, self._issue_id)
         if release:
             await self._release_automations()
@@ -281,12 +293,29 @@ class RoomController:
         """Ask Jev about the room and act on the answer."""
         if not self.enabled or self.auth_failed or self._stopped:
             return
+        task = asyncio.current_task()
+        if task is None:
+            await self._run()
+            return
+        self._runs.add(task)
+        try:
+            await self._run()
+        finally:
+            self._runs.discard(task)
+
+    async def async_pause(self) -> None:
+        """The shared budget is spent: hand this room back to its automations."""
+        if not self.paused:
+            self.paused = True
+            self._notify_entities()
+        await self._release_automations()
+
+    async def _run(self) -> None:
         # A room that cannot ask must not leave the house without its automations.
+        # The budget is shared, so every room pauses, not only the one that noticed.
         if not self.runtime.budget_left():
-            if not self.paused:
-                self.paused = True
-                self._notify_entities()
-            await self._release_automations()
+            for room in list(self.runtime.rooms.values()):
+                await room.async_pause()
             return
         if self.paused:
             self.paused = False
@@ -313,6 +342,8 @@ class RoomController:
         try:
             response = await self.runtime.ask(state, plan.questions)
         except JevAuthError:
+            if self._stopped:
+                return
             self.auth_failed = True
             await self._release_automations()
             self._notify_entities()
@@ -350,6 +381,8 @@ class RoomController:
         names = {s.entity_id: s.name for s in snapshots}
         done: list[str] = []
         for action in decision.actions:
+            if self._stopped or not self.enabled:
+                return
             if action.confirm:
                 if await self.runtime.propose(self, action, names[action.entity_id]):
                     done.append(
@@ -363,6 +396,8 @@ class RoomController:
             elif await self.async_execute(action):
                 done.append(f"{action.domain}.{action.service} {action.entity_id}")
 
+        if self._stopped:
+            return
         self.last = {
             "at": dt_util.utcnow().isoformat(),
             "summary": "; ".join(done) if done else "hold",
@@ -472,22 +507,27 @@ class RoomController:
     async def _take_automations(self) -> None:
         if not self.in_control or self._when_started(self._take_automations):
             return
-        taken = set(self.runtime.taken.get(self.subentry_id, []))
-        for automation in self.data.get(CONF_YIELD, []):
-            state = self.hass.states.get(automation)
-            if state is not None and state.state == "on":
+        async with self._automations_lock:
+            for automation in self.data.get(CONF_YIELD, []):
+                # Control can end while a turn_off is in flight; stop taking then.
+                if not self.in_control:
+                    return
+                state = self.hass.states.get(automation)
+                if state is None or state.state != "on":
+                    continue
                 await self._call_automation("turn_off", automation)
-                taken.add(automation)
-        if taken:
-            self.runtime.taken[self.subentry_id] = sorted(taken)
-            self.runtime.async_save()
+                taken = self.runtime.taken.setdefault(self.subentry_id, [])
+                if automation not in taken:
+                    taken.append(automation)
+                self.runtime.async_save()
 
     async def _release_automations(self) -> None:
         if not self.runtime.taken.get(self.subentry_id):
             return
         if not self._stopped and self._when_started(self._release_automations):
             return
-        await self.runtime.async_release(self.subentry_id)
+        async with self._automations_lock:
+            await self.runtime.async_release(self.subentry_id)
 
     async def _call_automation(self, service: str, entity_id: str) -> None:
         try:

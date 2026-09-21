@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any
 
 import pytest
@@ -296,8 +297,10 @@ async def test_run_in_flight_at_unload_does_nothing(hass, jev, calls) -> None:
     assert await hass.config_entries.async_unload(entry.entry_id)
     offs = len(calls["auto_off"])
     gate.set()
-    await run
+    with contextlib.suppress(asyncio.CancelledError):
+        await run
     await hass.async_block_till_done()
+    assert run.cancelled()
     assert calls["light"] == []
     assert len(calls["auto_off"]) == offs
 
@@ -347,3 +350,78 @@ async def test_default_preset_applies_until_room_picks_one(hass, jev, calls) -> 
     (controller,) = entry.runtime_data.rooms.values()
     assert controller.preset.name == "aggressive"
     assert hass.states.get("select.living_room_preset").state == "aggressive"
+
+
+async def test_run_stopped_while_acting_stops_acting(hass, jev, calls) -> None:
+    hass.states.async_set("light.second", "off", {"supported_color_modes": ["onoff"]})
+    entry = make_entry(
+        room(**{**DEFAULT_ROOM, "lights": ["light.ceiling", "light.second"]})
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    (controller,) = entry.runtime_data.rooms.values()
+    gate = asyncio.Event()
+    real = controller.async_execute
+
+    async def slow(action: Any, **kwargs: Any) -> bool:
+        done = await real(action, **kwargs)
+        await gate.wait()
+        return done
+
+    controller.async_execute = slow  # type: ignore[method-assign]
+    run = hass.async_create_task(controller.async_run())
+    for _ in range(20):
+        await asyncio.sleep(0)
+        if calls["light"]:
+            break
+    assert len(calls["light"]) == 1
+    runtime = entry.runtime_data
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert run.done()
+    assert len(calls["light"]) == 1
+    assert runtime.taken == {}
+
+
+async def test_take_waits_until_started(hass, jev, calls) -> None:
+    from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+    from homeassistant.core import CoreState
+
+    hass.set_state(CoreState.starting)
+    entry, controller = await setup(hass)
+    assert calls["auto_off"] == []
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+    assert [c.data["entity_id"] for c in calls["auto_off"]] == ["automation.old_lights"]
+
+
+async def test_spent_budget_pauses_every_room(hass, jev, calls) -> None:
+    hass.states.async_set("light.other", "off", {"supported_color_modes": ["onoff"]})
+    hass.states.async_set("automation.other", "on")
+    entry = make_entry(
+        room(**DEFAULT_ROOM),
+        room("Kitchen", lights=["light.other"], yield_automations=["automation.other"]),
+        **{CONF_BUDGET: 1},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    first, second = entry.runtime_data.rooms.values()
+    await first.async_run()
+    await first.async_run()
+    await hass.async_block_till_done()
+    assert first.paused and second.paused
+    assert entry.runtime_data.taken == {}
+
+
+async def test_removing_entry_releases_and_deletes_store(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    hass.states.async_remove("automation.old_lights")
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    hass.states.async_set("automation.old_lights", "off")
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert [c.data["entity_id"] for c in calls["auto_on"]] == ["automation.old_lights"]

@@ -128,3 +128,24 @@ async def test_malformed_numbers_are_dropped(hass: HomeAssistant) -> None:
         house_notes="",
         room_notes="",
     )
+
+
+async def test_resident_names_and_addresses_are_scrubbed(hass: HomeAssistant) -> None:
+    hass.states.async_set("person.alice", "home", {"friendly_name": "Alice"})
+    hass.states.async_set(
+        "light.lamp", "on", {"friendly_name": "Alice's lamp", "brightness": 255}
+    )
+    hass.states.async_set("sensor.wan", "203.0.113.7", {"friendly_name": "Router"})
+    text = build_state(
+        hass,
+        room="R",
+        controlled=["light.lamp"],
+        context=["sensor.wan"],
+        overrides={},
+        house_notes="Alice works from home.",
+        room_notes="",
+    )
+    assert "Alice" not in text
+    assert "203.0.113.7" not in text
+    assert "a resident's lamp" in text
+    assert "Router: [address]" in text
