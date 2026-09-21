@@ -58,7 +58,7 @@
           "house_notes": "全屋备注"
         },
         "data_description": {
-          "preset": "Jev 需要多有把握房间才动作。每个房间可单独覆盖。",
+          "preset": "Jev 需要多有把握房间才动作。没有单独选过档位的房间都用它；在房间的档位选择器里选过后以房间为准。",
           "notify_services": "手机 App 的 notify 服务。门锁等「先问我」设备只会推送到这里，从不直接控制。",
           "confirm_threshold": "「先问我」动作被提出前所需的最低概率。",
           "daily_call_budget": "今天调用达到此数后所有房间暂停。Jev 只按输入 token 计费。",

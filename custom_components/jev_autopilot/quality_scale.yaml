@@ -11,7 +11,7 @@ rules:
     status: done
     comment: >-
       No polling of devices. A room is evaluated after a 30 s debounce on changes to
-      its own entities, plus a patrol timer (default 10 min) so slow drifts such as
+      its context sensors, plus a patrol timer (default 10 min) so slow drifts such as
       dusk are seen. Every evaluation is a paid call, and a daily budget caps them.
   brands:
     status: done

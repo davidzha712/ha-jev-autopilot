@@ -6,6 +6,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, Platform
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.start import async_at_started
 from jevclient import JevClient
 
 from .const import (
@@ -51,6 +52,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: JevAutopilotConfigEntry)
         hass.bus.async_listen("mobile_app_notification_action", _on_action)
     )
     entry.async_on_unload(entry.add_update_listener(_async_reload))
+
+    async def _release_orphans(_hass: HomeAssistant) -> None:
+        await runtime.async_release_orphans()
+
+    entry.async_on_unload(async_at_started(hass, _release_orphans))
     return True
 
 

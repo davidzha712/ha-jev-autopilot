@@ -12,6 +12,7 @@ from homeassistant.const import CONF_NAME
 from homeassistant.core import (
     CALLBACK_TYPE,
     Context,
+    CoreState,
     Event,
     EventStateChangedData,
     HomeAssistant,
@@ -25,6 +26,7 @@ from homeassistant.helpers.event import (
     async_track_state_change_event,
     async_track_time_interval,
 )
+from homeassistant.helpers.start import async_at_started
 from homeassistant.util import dt as dt_util
 from jevclient import JevAuthError, JevError, JevValidationError
 
@@ -83,6 +85,9 @@ STATUS_DEGRADED = "degraded"
 STATUS_PAUSED = "paused"
 STATUSES = [STATUS_OK, STATUS_DISABLED, STATUS_DEGRADED, STATUS_PAUSED]
 
+# What a person can change on a device. A foreign change to any of these is an override.
+_OVERRIDE_ATTRS = ("brightness", "color_temp_kelvin", "temperature", "percentage")
+
 
 def levels_from_options(options: dict[str, Any]) -> Levels:
     return Levels(
@@ -111,7 +116,9 @@ class RoomController:
         self.name: str = self.data.get(CONF_NAME) or subentry.title
         options = dict(runtime.entry.options)
         self.levels = levels_from_options(options)
-        self.preset_name: str = options.get(CONF_PRESET, DEFAULT_PRESET)
+        self.preset_name: str = runtime.presets.get(
+            self.subentry_id, options.get(CONF_PRESET, DEFAULT_PRESET)
+        )
         self.confirm_threshold = max(
             float(options.get(CONF_CONFIRM_THRESHOLD, DEFAULT_CONFIRM_THRESHOLD)),
             MIN_CONFIRM_THRESHOLD,
@@ -124,6 +131,7 @@ class RoomController:
         self.degraded = False
         self.paused = False
         self.auth_failed = False
+        self._stopped = False
         self.failures = 0
         self.history = History()
         self.last: dict[str, Any] = {}
@@ -162,6 +170,15 @@ class RoomController:
         return self.direct_entities + self.confirm_entities
 
     @property
+    def in_control(self) -> bool:
+        """True while this room, not your automations, should be running it."""
+        return (
+            self.enabled
+            and not self._stopped
+            and not (self.degraded or self.paused or self.auth_failed)
+        )
+
+    @property
     def status(self) -> str:
         if not self.enabled:
             return STATUS_DISABLED
@@ -190,26 +207,30 @@ class RoomController:
         )
 
     async def async_stop(self, *, release: bool) -> None:
+        self._stopped = True
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
         self._debouncer.async_shutdown()
+        ir.async_delete_issue(self.hass, DOMAIN, self._issue_id)
         if release:
             await self._release_automations()
 
     async def async_set_enabled(self, enabled: bool) -> None:
         self.enabled = enabled
         if enabled:
-            if not self.degraded:
-                await self._take_automations()
+            await self._take_automations()
             await self._debouncer.async_call()
         else:
             await self._release_automations()
         self._notify_entities()
 
     def set_preset(self, name: str) -> None:
+        """A preset picked for this room; it outlives the global default."""
         if name in PRESETS:
             self.preset_name = name
+            self.runtime.presets[self.subentry_id] = name
+            self.runtime.async_save()
             self._notify_entities()
 
     # --- triggers ---
@@ -219,11 +240,18 @@ class RoomController:
         old, new = event.data["old_state"], event.data["new_state"]
         if old is None or new is None or old.state == new.state:
             return
-        self.hass.async_create_task(self._debouncer.async_call())
+        self._background(self._debouncer.async_call(), "debounce")
 
     @callback
     def _on_patrol(self, _now: Any) -> None:
-        self.hass.async_create_task(self.async_run())
+        self._background(self.async_run(), "patrol")
+
+    @callback
+    def _background(self, coro: Any, what: str) -> None:
+        # Tied to the entry so unloading cancels a run still waiting on Jev.
+        self.runtime.entry.async_create_background_task(
+            self.hass, coro, f"{DOMAIN} {what} {self.subentry_id}"
+        )
 
     @callback
     def _on_controlled(self, event: Event[EventStateChangedData]) -> None:
@@ -235,9 +263,9 @@ class RoomController:
         ctx = new.context
         if ctx.id in self._ours or (ctx.parent_id and ctx.parent_id in self._ours):
             return
-        changed = old.state != new.state or old.attributes.get(
-            "brightness"
-        ) != new.attributes.get("brightness")
+        changed = old.state != new.state or any(
+            old.attributes.get(a) != new.attributes.get(a) for a in _OVERRIDE_ATTRS
+        )
         if not changed:
             return
         self.history.last_override[new.entity_id] = time.time()
@@ -251,17 +279,18 @@ class RoomController:
 
     async def async_run(self) -> None:
         """Ask Jev about the room and act on the answer."""
-        if not self.enabled or self.auth_failed:
+        if not self.enabled or self.auth_failed or self._stopped:
             return
         # A room that cannot ask must not leave the house without its automations.
         if not self.runtime.budget_left():
             if not self.paused:
                 self.paused = True
-                await self._release_automations()
                 self._notify_entities()
+            await self._release_automations()
             return
         if self.paused:
             self.paused = False
+            self._notify_entities()
             await self._take_automations()
         confirm = set(self.confirm_entities)
         snapshots = [
@@ -300,6 +329,9 @@ class RoomController:
             return
         except JevError as err:
             await self._failed(str(err))
+            return
+        # The room may have been switched off or unloaded while Jev was thinking.
+        if not self.enabled or self._stopped:
             return
         await self._succeeded()
 
@@ -392,6 +424,8 @@ class RoomController:
         return f"degraded_{self.subentry_id}"
 
     async def _failed(self, error: str) -> None:
+        if self._stopped:
+            return
         self.failures += 1
         # Warn until the room degrades, then stay quiet: a patrol every few minutes
         # would otherwise repeat the same line all night.
@@ -424,22 +458,36 @@ class RoomController:
 
     # --- takeover ---
 
+    def _when_started(self, job: Any) -> bool:
+        """Defer until Home Assistant has started, when automations exist."""
+        if self.hass.state is CoreState.running:
+            return False
+
+        async def _later(_hass: HomeAssistant) -> None:
+            await job()
+
+        self._unsubs.append(async_at_started(self.hass, _later))
+        return True
+
     async def _take_automations(self) -> None:
-        wanted = [a for a in self.data.get(CONF_YIELD, []) if self.hass.states.get(a)]
+        if not self.in_control or self._when_started(self._take_automations):
+            return
         taken = set(self.runtime.taken.get(self.subentry_id, []))
-        for automation in wanted:
+        for automation in self.data.get(CONF_YIELD, []):
             state = self.hass.states.get(automation)
             if state is not None and state.state == "on":
                 await self._call_automation("turn_off", automation)
                 taken.add(automation)
-        self.runtime.taken[self.subentry_id] = sorted(taken)
-        self.runtime.async_save()
+        if taken:
+            self.runtime.taken[self.subentry_id] = sorted(taken)
+            self.runtime.async_save()
 
     async def _release_automations(self) -> None:
-        for automation in self.runtime.taken.pop(self.subentry_id, []):
-            if self.hass.states.get(automation) is not None:
-                await self._call_automation("turn_on", automation)
-        self.runtime.async_save()
+        if not self.runtime.taken.get(self.subentry_id):
+            return
+        if not self._stopped and self._when_started(self._release_automations):
+            return
+        await self.runtime.async_release(self.subentry_id)
 
     async def _call_automation(self, service: str, entity_id: str) -> None:
         try:

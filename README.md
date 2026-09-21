@@ -87,7 +87,7 @@ An entity can belong to one room only.
 
 | Option | Default | Notes |
 |---|---|---|
-| Default preset | balanced | Each room also has its own preset select |
+| Default preset | balanced | For rooms with no preset of their own; a room's preset select overrides it |
 | Ask for confirmation on | — | Mobile app notify services for *Ask first* proposals |
 | Confirmation threshold | 0.90 | Floor 0.80. Minimum probability before anything is proposed |
 | Daily call budget | 3000 | Rooms pause and hand back when reached; resets at midnight |

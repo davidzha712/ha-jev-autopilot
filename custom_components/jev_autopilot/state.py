@@ -14,6 +14,9 @@ from homeassistant.util import dt as dt_util
 
 from .engine import UNUSABLE_STATES, EntitySnapshot
 
+# Named after people. Only the count of residents at home is ever sent.
+_PERSONAL_DOMAINS = {"person", "device_tracker"}
+
 _BRIGHTNESS_MODES = {
     "brightness",
     "color_temp",
@@ -40,15 +43,15 @@ def snapshot(
         modes = set(attrs.get("supported_color_modes") or [])
         kwargs["supports_brightness"] = bool(modes & _BRIGHTNESS_MODES)
         kwargs["supports_color_temp"] = "color_temp" in modes
-        if (bri := attrs.get("brightness")) is not None:
-            kwargs["brightness_pct"] = round(float(bri) / 255 * 100, 1)
-        if (kelvin := attrs.get("color_temp_kelvin")) is not None:
+        if (bri := _number(attrs.get("brightness"))) is not None:
+            kwargs["brightness_pct"] = round(bri / 255 * 100, 1)
+        if (kelvin := _number(attrs.get("color_temp_kelvin"))) is not None:
             kwargs["color_temp_k"] = int(kelvin)
         kwargs["min_color_temp_k"] = attrs.get("min_color_temp_kelvin")
         kwargs["max_color_temp_k"] = attrs.get("max_color_temp_kelvin")
     elif domain == "climate":
-        if (target := attrs.get("temperature")) is not None:
-            kwargs["target_temp"] = float(target)
+        if (target := _number(attrs.get("temperature"))) is not None:
+            kwargs["target_temp"] = target
         kwargs["hvac_modes"] = tuple(str(m) for m in attrs.get("hvac_modes") or ())
     return EntitySnapshot(
         entity_id=entity_id,
@@ -57,6 +60,13 @@ def snapshot(
         confirm=confirm,
         **kwargs,  # type: ignore[arg-type]
     )
+
+
+def _number(value: object) -> float | None:
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
 
 
 def _ago(now: datetime, then: datetime) -> str:
@@ -77,8 +87,8 @@ def _describe(state: State, now: datetime) -> str:
         if dc := attrs.get("device_class"):
             parts.append(f"({dc})")
         if state.domain == "light" and state.state == "on":
-            if (bri := attrs.get("brightness")) is not None:
-                parts.append(f"brightness {round(float(bri) / 255 * 100)}%")
+            if (bri := _number(attrs.get("brightness"))) is not None:
+                parts.append(f"brightness {round(bri / 255 * 100)}%")
             if (kelvin := attrs.get("color_temp_kelvin")) is not None:
                 parts.append(f"{kelvin}K")
         if state.domain == "climate":
@@ -119,7 +129,7 @@ def build_state(
         home = sum(1 for s in people if s.state == "home")
         lines.append(f"Residents at home: {home} of {len(people)}.")
 
-    sensors = _states(hass, context)
+    sensors = [s for s in _states(hass, context) if s.domain not in _PERSONAL_DOMAINS]
     if sensors:
         lines.append("Room sensors:")
         lines.extend(f"- {s.name}: {_describe(s, now)}" for s in sensors)

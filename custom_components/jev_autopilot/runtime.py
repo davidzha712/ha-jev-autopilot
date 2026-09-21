@@ -13,6 +13,7 @@ from datetime import date
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
@@ -74,6 +75,8 @@ class Runtime:
         self.suppressed: dict[tuple[str, str], float] = {}
         self.log: deque[dict[str, Any]] = deque(maxlen=LOG_SIZE)
         self.taken: dict[str, list[str]] = {}
+        self.presets: dict[str, str] = {}
+        self._closed = False
         self._store: Store[dict[str, Any]] = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}")
         self._sleep: Callable[[float], Coroutine[Any, Any, None]] = asyncio.sleep
 
@@ -83,6 +86,7 @@ class Runtime:
         data = await self._store.async_load() or {}
         self.log.extend(data.get("log", []))
         self.taken = {k: list(v) for k, v in data.get("taken", {}).items()}
+        self.presets = dict(data.get("presets", {}))
         counters = data.get("counters", {})
         if counters.get("day") == self._day.isoformat():
             self.calls_today = int(counters.get("calls", 0))
@@ -90,12 +94,15 @@ class Runtime:
 
     @callback
     def async_save(self) -> None:
-        self._store.async_delay_save(self._data, 10)
+        # After unload a new Runtime owns the same file; a late write would clobber it.
+        if not self._closed:
+            self._store.async_delay_save(self._data, 10)
 
     def _data(self) -> dict[str, Any]:
         return {
             "log": list(self.log),
             "taken": self.taken,
+            "presets": self.presets,
             "counters": {
                 "day": self._day.isoformat(),
                 "calls": self.calls_today,
@@ -104,7 +111,34 @@ class Runtime:
         }
 
     async def async_flush(self) -> None:
+        """Final write on unload. Nothing is saved by this Runtime afterwards."""
         await self._store.async_save(self._data())
+        self._closed = True
+
+    # --- automations handed back ---
+
+    async def async_release(self, owner: str) -> None:
+        """Turn back on what `owner` turned off. Keep what cannot be found yet."""
+        missing = []
+        for automation in self.taken.pop(owner, []):
+            if self.hass.states.get(automation) is None:
+                missing.append(automation)
+                continue
+            try:
+                await self.hass.services.async_call(
+                    "automation", "turn_on", {"entity_id": automation}, blocking=True
+                )
+            except HomeAssistantError as err:
+                _LOGGER.warning("automation.turn_on %s failed: %s", automation, err)
+                missing.append(automation)
+        if missing:
+            self.taken[owner] = missing
+        self.async_save()
+
+    async def async_release_orphans(self) -> None:
+        """Hand back automations held for rooms that no longer exist."""
+        for owner in [o for o in self.taken if o not in self.rooms]:
+            await self.async_release(owner)
 
     # --- budget and calls ---
 

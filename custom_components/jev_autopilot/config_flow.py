@@ -286,7 +286,7 @@ def _room_schema() -> vol.Schema:
                 ["lock", "switch", "input_boolean"]
             ),
             vol.Optional(CONF_CONTEXT): _entities(
-                ["sensor", "binary_sensor", "input_boolean", "input_select", "person"]
+                ["sensor", "binary_sensor", "input_boolean", "input_select"]
             ),
             vol.Optional(CONF_YIELD): _entities("automation"),
             vol.Optional(CONF_ROOM_NOTES): selector.TextSelector(

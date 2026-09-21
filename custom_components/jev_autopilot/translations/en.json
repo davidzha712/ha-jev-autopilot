@@ -58,7 +58,7 @@
           "house_notes": "House notes"
         },
         "data_description": {
-          "preset": "How sure Jev must be before a room acts. Each room can override this.",
+          "preset": "How sure Jev must be before a room acts. Used by every room that has no preset of its own; picking one on the room's preset select overrides it.",
           "notify_services": "Mobile app notify services. Locks and other confirm-tier devices are only proposed here, never switched directly.",
           "confirm_threshold": "Minimum probability before a confirm-tier action is even proposed.",
           "daily_call_budget": "Rooms pause when this many calls were made today. Jev charges per input token only.",

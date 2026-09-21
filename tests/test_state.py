@@ -71,7 +71,7 @@ async def test_build_state_has_situation_but_no_ids_or_people(
         hass,
         room="Living room",
         controlled=["light.ceiling", "climate.trv", "light.gone"],
-        context=["sensor.lux", "binary_sensor.motion"],
+        context=["sensor.lux", "binary_sensor.motion", "person.alice"],
         overrides={"light.ceiling": dt_util.now().timestamp() - 600},
         house_notes="Two adults.",
         room_notes="Reading corner.",
@@ -106,3 +106,25 @@ async def test_build_state_minimal(hass: HomeAssistant) -> None:
     )
     assert text.splitlines()[1] == "Room: Hall."
     assert len(text.splitlines()) == 2
+
+
+async def test_malformed_numbers_are_dropped(hass: HomeAssistant) -> None:
+    hass.states.async_set(
+        "light.odd",
+        "on",
+        {"supported_color_modes": ["brightness"], "brightness": "n/a"},
+    )
+    hass.states.async_set("climate.odd", "heat", {"temperature": None})
+    light = snapshot(hass, "light.odd", confirm=False)
+    assert light is not None and light.brightness_pct is None
+    trv = snapshot(hass, "climate.odd", confirm=False)
+    assert trv is not None and trv.target_temp is None
+    assert "brightness" not in build_state(
+        hass,
+        room="R",
+        controlled=["light.odd"],
+        context=[],
+        overrides={},
+        house_notes="",
+        room_notes="",
+    )

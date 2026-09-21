@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -11,7 +12,7 @@ from homeassistant.helpers import issue_registry as ir
 from jevclient import JevAuthError, JevConnectionError, NoulAnswer
 from pytest_homeassistant_custom_component.common import async_mock_service
 
-from custom_components.jev_autopilot.const import CONF_BUDGET, DOMAIN
+from custom_components.jev_autopilot.const import CONF_BUDGET, CONF_PRESET, DOMAIN
 
 from .conftest import DEFAULT_ROOM, make_entry, room
 
@@ -238,3 +239,111 @@ async def test_removing_room_removes_its_device(hass, jev, calls) -> None:
     assert registry.async_get_device_by_identifier(ident, entry.entry_id) is None
     assert entry.state is ConfigEntryState.LOADED
     assert calls["auto_on"], "automation handed back when its room goes"
+
+
+async def test_reenabling_a_paused_room_keeps_automations_released(
+    hass, jev, calls
+) -> None:
+    entry, controller = await setup(hass, **{CONF_BUDGET: 1})
+    await controller.async_run()
+    await controller.async_run()
+    await hass.async_block_till_done()
+    assert controller.paused
+    takes = len(calls["auto_off"])
+    for service in ("turn_off", "turn_on"):
+        await hass.services.async_call(
+            "switch",
+            service,
+            {"entity_id": "switch.living_room_autopilot"},
+            blocking=True,
+        )
+    assert len(calls["auto_off"]) == takes
+    assert entry.runtime_data.taken == {}
+
+
+async def test_reenabling_after_auth_failure_keeps_automations_released(
+    hass, jev, calls
+) -> None:
+    entry, controller = await setup(hass)
+    jev.error = JevAuthError("revoked")
+    await controller.async_run()
+    await hass.async_block_till_done()
+    takes = len(calls["auto_off"])
+    for service in ("turn_off", "turn_on"):
+        await hass.services.async_call(
+            "switch",
+            service,
+            {"entity_id": "switch.living_room_autopilot"},
+            blocking=True,
+        )
+    assert len(calls["auto_off"]) == takes
+    assert entry.runtime_data.taken == {}
+
+
+async def test_run_in_flight_at_unload_does_nothing(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    jev.policy["on"] = NoulAnswer(0.95)
+    gate = asyncio.Event()
+    answer = jev.ask.side_effect
+
+    async def slow(*args: Any) -> Any:
+        await gate.wait()
+        return await answer(*args)
+
+    jev.ask.side_effect = slow
+    run = hass.async_create_task(controller.async_run())
+    await asyncio.sleep(0)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    offs = len(calls["auto_off"])
+    gate.set()
+    await run
+    await hass.async_block_till_done()
+    assert calls["light"] == []
+    assert len(calls["auto_off"]) == offs
+
+
+async def test_missing_automation_is_kept_until_it_exists(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    runtime = entry.runtime_data
+    hass.states.async_remove("automation.old_lights")
+    await runtime.async_release(controller.subentry_id)
+    assert calls["auto_on"] == []
+    assert runtime.taken == {controller.subentry_id: ["automation.old_lights"]}
+
+
+async def test_orphaned_automations_are_released(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    runtime = entry.runtime_data
+    runtime.taken["gone-room"] = ["automation.old_lights"]
+    await runtime.async_release_orphans()
+    assert "gone-room" not in runtime.taken
+    assert controller.subentry_id in runtime.taken
+    assert [c.data["entity_id"] for c in calls["auto_on"]] == ["automation.old_lights"]
+
+
+async def test_attribute_change_counts_as_override(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    hass.states.async_set(
+        "light.ceiling",
+        "off",
+        {"supported_color_modes": ["onoff"], "color_temp_kelvin": 2700},
+        context=Context(),
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.living_room_manual_overrides_today").state == "1"
+
+
+async def test_default_preset_applies_until_room_picks_one(hass, jev, calls) -> None:
+    entry, controller = await setup(hass, **{CONF_PRESET: "conservative"})
+    assert controller.preset.name == "conservative"
+    await hass.services.async_call(
+        "select",
+        "select_option",
+        {"entity_id": "select.living_room_preset", "option": "aggressive"},
+        blocking=True,
+    )
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    (controller,) = entry.runtime_data.rooms.values()
+    assert controller.preset.name == "aggressive"
+    assert hass.states.get("select.living_room_preset").state == "aggressive"
