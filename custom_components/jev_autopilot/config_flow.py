@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -296,29 +296,45 @@ def _room_schema() -> vol.Schema:
     )
 
 
-def _room_error(data: Mapping[str, Any]) -> str | None:
-    controlled = [
-        e
-        for key in (CONF_LIGHTS, CONF_SWITCHES, CONF_FANS, CONF_CLIMATES, CONF_MEDIA)
-        for e in data.get(key, [])
-    ]
+_ROOM_LISTS = (CONF_LIGHTS, CONF_SWITCHES, CONF_FANS, CONF_CLIMATES, CONF_MEDIA)
+
+
+def _room_entities(data: Mapping[str, Any]) -> set[str]:
+    return {e for key in (*_ROOM_LISTS, CONF_CONFIRM_ENTITIES) for e in data.get(key, [])}
+
+
+def _room_error(
+    data: Mapping[str, Any], others: Iterable[Mapping[str, Any]] = ()
+) -> str | None:
+    controlled = [e for key in _ROOM_LISTS for e in data.get(key, [])]
     confirm = set(data.get(CONF_CONFIRM_ENTITIES, []))
     if not controlled and not confirm:
         return "no_entities"
     if len(controlled) != len(set(controlled)) or confirm & set(controlled):
         return "duplicate_entity"
+    # Two rooms driving one device would fight over it.
+    taken = set().union(*(_room_entities(o) for o in others))
+    if _room_entities(data) & taken:
+        return "entity_in_other_room"
     return None
 
 
 class RoomSubentryFlow(ConfigSubentryFlow):
     """One room: what it controls, what it looks at, which automations it replaces."""
 
+    def _other_rooms(self, skip: str | None = None) -> list[Mapping[str, Any]]:
+        return [
+            sub.data
+            for sub in self._get_entry().subentries.values()
+            if sub.subentry_type == SUBENTRY_ROOM and sub.subentry_id != skip
+        ]
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            if (error := _room_error(user_input)) is None:
+            if (error := _room_error(user_input, self._other_rooms())) is None:
                 return self.async_create_entry(
                     title=user_input[CONF_NAME], data=user_input
                 )
@@ -337,7 +353,9 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         subentry = self._get_reconfigure_subentry()
         errors: dict[str, str] = {}
         if user_input is not None:
-            if (error := _room_error(user_input)) is None:
+            if (
+                error := _room_error(user_input, self._other_rooms(subentry.subentry_id))
+            ) is None:
                 # The entry's update listener reloads it; update_reload_and_abort
                 # refuses to run while one is registered.
                 return self.async_update_and_abort(

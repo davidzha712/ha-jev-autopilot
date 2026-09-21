@@ -163,3 +163,19 @@ async def test_room_subentry_reconfigure(hass: HomeAssistant, jev) -> None:
     assert sub.title == "Cooking"
     assert sub.data[CONF_LIGHTS] == ["light.a", "light.b"]
     assert entry.state is config_entries.ConfigEntryState.LOADED
+
+
+async def test_room_cannot_take_another_rooms_device(hass: HomeAssistant, jev) -> None:
+    entry = make_entry(room("Kitchen", **{CONF_LIGHTS: ["light.a"]}))
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_ROOM), context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_NAME: "Hall", CONF_LIGHTS: ["light.a"]}
+    )
+    assert result["errors"] == {"base": "entity_in_other_room"}
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_NAME: "Hall", CONF_SWITCHES: ["switch.b"]}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY

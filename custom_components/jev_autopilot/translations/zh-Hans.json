@@ -4,7 +4,11 @@
       "user": {
         "title": "连接 Jev",
         "description": "Jev Autopilot 询问 TypeSafe Jev 每个房间需要什么，然后执行。可直连 TypeSafe API，或用 OpenRouter：Base URL 填 `https://openrouter.ai/api`，模型填 `typesafe/jev-1.13`。",
-        "data": { "api_key": "API 密钥", "base_url": "Base URL", "model": "模型" },
+        "data": {
+          "api_key": "API 密钥",
+          "base_url": "Base URL",
+          "model": "模型"
+        },
         "data_description": {
           "api_key": "TypeSafe 或 OpenRouter 的 API 密钥。",
           "base_url": "不含 /v1/systemone 路径。",
@@ -14,15 +18,24 @@
       "reauth_confirm": {
         "title": "Jev 拒绝了 API 密钥",
         "description": "输入新的 API 密钥。房间设置保持不变。",
-        "data": { "api_key": "API 密钥" }
+        "data": {
+          "api_key": "API 密钥"
+        }
       },
       "reconfigure": {
         "title": "修改连接",
         "description": "API 密钥留空则保留当前密钥。",
-        "data": { "api_key": "API 密钥", "base_url": "Base URL", "model": "模型" }
+        "data": {
+          "api_key": "API 密钥",
+          "base_url": "Base URL",
+          "model": "模型"
+        }
       }
     },
-    "error": { "invalid_auth": "认证无效", "cannot_connect": "连接失败" },
+    "error": {
+      "invalid_auth": "认证无效",
+      "cannot_connect": "连接失败"
+    },
     "abort": {
       "single_instance_allowed": "已经配置过，只能有一个实例。",
       "reauth_successful": "重新认证成功",
@@ -57,12 +70,16 @@
         }
       }
     },
-    "error": { "invalid_levels": "至少填两个用逗号分隔的数字。" }
+    "error": {
+      "invalid_levels": "至少填两个用逗号分隔的数字。"
+    }
   },
   "config_subentries": {
     "room": {
       "entry_type": "房间",
-      "initiate_flow": { "user": "添加房间" },
+      "initiate_flow": {
+        "user": "添加房间"
+      },
       "step": {
         "user": {
           "title": "添加房间",
@@ -105,9 +122,12 @@
       },
       "error": {
         "no_entities": "至少选择一个要控制的设备。",
-        "duplicate_entity": "同一设备只能出现在一个列表里。"
+        "duplicate_entity": "同一设备只能出现在一个列表里。",
+        "entity_in_other_room": "这个设备已经属于另一个房间。"
       },
-      "abort": { "reconfigure_successful": "重新配置成功" }
+      "abort": {
+        "reconfigure_successful": "重新配置成功"
+      }
     }
   },
   "selector": {
@@ -120,22 +140,43 @@
     }
   },
   "entity": {
-    "switch": { "autopilot": { "name": "自动驾驶" } },
+    "switch": {
+      "autopilot": {
+        "name": "自动驾驶"
+      }
+    },
     "select": {
       "preset": {
         "name": "档位",
-        "state": { "conservative": "保守", "balanced": "均衡", "aggressive": "积极" }
+        "state": {
+          "conservative": "保守",
+          "balanced": "均衡",
+          "aggressive": "积极"
+        }
       }
     },
     "sensor": {
-      "last_decision": { "name": "最近决策" },
+      "last_decision": {
+        "name": "最近决策"
+      },
       "status": {
         "name": "状态",
-        "state": { "ok": "正常", "disabled": "已关闭", "degraded": "已降级", "paused": "暂停（预算）" }
+        "state": {
+          "ok": "正常",
+          "disabled": "已关闭",
+          "degraded": "已降级",
+          "paused": "暂停（预算）"
+        }
       },
-      "overrides_today": { "name": "今日手动覆盖" },
-      "calls_today": { "name": "今日调用" },
-      "cost_today": { "name": "今日费用" }
+      "overrides_today": {
+        "name": "今日手动覆盖"
+      },
+      "calls_today": {
+        "name": "今日调用"
+      },
+      "cost_today": {
+        "name": "今日费用"
+      }
     }
   },
   "issues": {

@@ -122,7 +122,8 @@
       },
       "error": {
         "no_entities": "Select at least one device to control.",
-        "duplicate_entity": "A device can only be in one list."
+        "duplicate_entity": "A device can only be in one list.",
+        "entity_in_other_room": "This device already belongs to another room."
       },
       "abort": {
         "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
@@ -140,7 +141,9 @@
   },
   "entity": {
     "switch": {
-      "autopilot": { "name": "Autopilot" }
+      "autopilot": {
+        "name": "Autopilot"
+      }
     },
     "select": {
       "preset": {
@@ -153,7 +156,9 @@
       }
     },
     "sensor": {
-      "last_decision": { "name": "Last decision" },
+      "last_decision": {
+        "name": "Last decision"
+      },
       "status": {
         "name": "Status",
         "state": {
@@ -163,9 +168,15 @@
           "paused": "Paused (budget)"
         }
       },
-      "overrides_today": { "name": "Manual overrides today" },
-      "calls_today": { "name": "Calls today" },
-      "cost_today": { "name": "Cost today" }
+      "overrides_today": {
+        "name": "Manual overrides today"
+      },
+      "calls_today": {
+        "name": "Calls today"
+      },
+      "cost_today": {
+        "name": "Cost today"
+      }
     }
   },
   "issues": {
