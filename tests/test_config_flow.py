@@ -120,6 +120,9 @@ async def test_options_validate_levels(hass: HomeAssistant, jev) -> None:
     bad = {**base, CONF_BRIGHTNESS_LEVELS: eleven}
     result = await hass.config_entries.options.async_configure(result["flow_id"], bad)
     assert result["errors"] == {CONF_BRIGHTNESS_LEVELS: "too_many_levels"}
+    bad = {**base, CONF_BRIGHTNESS_LEVELS: "0, 50, 500"}
+    result = await hass.config_entries.options.async_configure(result["flow_id"], bad)
+    assert result["errors"] == {CONF_BRIGHTNESS_LEVELS: "brightness_range"}
     result = await hass.config_entries.options.async_configure(result["flow_id"], base)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_PRESET] == "conservative"

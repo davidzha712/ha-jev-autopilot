@@ -367,6 +367,9 @@ class RoomController:
                 extra_names=users,
             )
         except Exception as err:
+            # Likely a bug rather than a flaky network, so keep the traceback once.
+            if not self.failures:
+                _LOGGER.exception("Could not build the questions for %s", self.name)
             await self._failed(repr(err))
             return
         try:

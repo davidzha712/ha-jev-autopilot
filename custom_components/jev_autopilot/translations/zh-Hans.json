@@ -72,7 +72,8 @@
     },
     "error": {
       "invalid_levels": "至少填两个用逗号分隔的数字。",
-      "too_many_levels": "最多填 10 档。"
+      "too_many_levels": "最多填 10 档。",
+      "brightness_range": "亮度档位是 1 到 100 的百分比。"
     }
   },
   "config_subentries": {

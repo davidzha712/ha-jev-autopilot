@@ -210,6 +210,10 @@ class JevAutopilotOptionsFlow(OptionsFlow):
                 # Brightness is asked as a score, which the API caps at ten levels.
                 if key == CONF_BRIGHTNESS_LEVELS and len(parsed) > MAX_SCORE_LEVELS:
                     errors[key] = "too_many_levels"
+                elif key == CONF_BRIGHTNESS_LEVELS and not all(
+                    1 <= int(value) <= 100 for value in parsed
+                ):
+                    errors[key] = "brightness_range"
             if not errors:
                 return self.async_create_entry(data=user_input)
 

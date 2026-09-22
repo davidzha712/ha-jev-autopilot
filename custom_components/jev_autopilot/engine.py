@@ -321,7 +321,9 @@ def decide(
     grouped: dict[str, dict[str, Answer]] = {}
     for key, (kind, entity_id) in plan.index.items():
         answer = answers.get(key)
-        if answer is None:
+        # A malformed reply can carry NaN or infinity, which slips past every
+        # threshold comparison. Such an answer is not acted on at all.
+        if answer is None or not _finite(answer):
             continue
         # A choice outside the options we offered cannot be acted on; drop it.
         question = plan.questions.get(key)
@@ -389,6 +391,11 @@ def _plain(got: Mapping[str, Answer]) -> dict[str, Any]:
     return out
 
 
+def _finite(answer: Answer) -> bool:
+    values = (getattr(answer, name, 0.0) for name in ("noul", "score", "confidence"))
+    return all(math.isfinite(value) for value in values)
+
+
 def _noul(answer: Answer | None) -> float | None:
     return answer.noul if isinstance(answer, NoulAnswer) else None
 
@@ -410,7 +417,11 @@ def _decide_media(
     entity: EntitySnapshot, answer: Answer | None, preset: Preset
 ) -> Action | None:
     p = _noul(answer)
-    if p is None or p < preset.on_threshold or entity.state not in MEDIA_ACTIVE_STATES:
+    if (
+        p is None
+        or not p >= preset.on_threshold
+        or entity.state not in MEDIA_ACTIVE_STATES
+    ):
         return None
     return Action(entity.entity_id, "media_player", "turn_off", {}, f"p(off)={p:.2f}")
 

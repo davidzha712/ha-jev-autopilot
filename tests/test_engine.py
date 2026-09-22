@@ -160,6 +160,21 @@ def test_switch_and_fan_toggle():
     }
 
 
+@pytest.mark.parametrize(
+    "answer",
+    [
+        NoulAnswer(float("nan")),
+        ScoreAnswer(score=float("nan"), legend={}, probabilities={}, confidence=0.9),
+        ScoreAnswer(score=2.0, legend={}, probabilities={}, confidence=float("inf")),
+    ],
+)
+def test_non_finite_answers_are_dropped(answer):
+    tv = EntitySnapshot("media_player.tv", "TV", "playing")
+    lamp = EntitySnapshot("light.a", "Lamp", "on", brightness_pct=50)
+    by_kind = {("off", "media_player.tv"): answer, ("bri", "light.a"): answer}
+    assert run([tv, lamp], by_kind).actions == []
+
+
 def test_media_player_only_off():
     tv = EntitySnapshot("media_player.tv", "TV", "playing")
     assert (
