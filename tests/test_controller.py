@@ -439,7 +439,7 @@ async def test_questions_carry_no_resident_names(hass, jev, calls) -> None:
     hass.states.async_set(
         "lock.front", "unlocked", {"friendly_name": "Alice's front door"}
     )
-    entry = make_entry(room("alice room 10.0.0.9", **DEFAULT_ROOM))
+    entry = make_entry(room("alice room 198.51.100.9", **DEFAULT_ROOM))
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -448,7 +448,7 @@ async def test_questions_carry_no_resident_names(hass, jev, calls) -> None:
     await hass.async_block_till_done()
     (state, questions), *_ = jev.calls[1:] or jev.calls
     sent = state + repr(questions)
-    for leak in ("Alice", "alice", "张三", "10.0.0.9"):
+    for leak in ("Alice", "alice", "张三", "198.51.100.9"):
         assert leak not in sent
     assert "a resident's front door" in sent
     # The phone is the household's own, so it names the lock as they do.

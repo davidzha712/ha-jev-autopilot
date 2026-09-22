@@ -159,8 +159,8 @@ def test_scrub_matches_cjk_and_any_case() -> None:
 
 
 def test_scrub_addresses_next_to_letters_and_cjk() -> None:
-    for text in ("打印机192.168.1.20", "nas_192.168.1.5", "host192.168.1.5."):
-        assert "192.168" not in scrub(text, [])
+    for text in ("打印机192.0.2.20", "nas_192.0.2.5", "host192.0.2.5."):
+        assert "192.0.2" not in scrub(text, [])
     assert scrub("version 1.2.3.4.5", []) == "version 1.2.3.4.5"
 
 

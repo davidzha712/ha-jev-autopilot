@@ -158,7 +158,7 @@ def build_state(
 
 
 # Lookarounds, not \b: \b treats CJK letters and "_" as word characters, so
-# "打印机192.168.1.20" or "nas_192.168.1.5" would keep the address.
+# "打印机192.0.2.20" or "nas_192.0.2.5" would keep the address.
 _IPV4 = re.compile(r"(?<!\d)(?<!\d\.)(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)")
 _ENTITY_ID = re.compile(r"(?<![A-Za-z0-9_.])[a-z_][a-z0-9_]*\.[a-z0-9_]+(?![A-Za-z0-9_])")
 _MIN_NAME_PART = 2
