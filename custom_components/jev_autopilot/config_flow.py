@@ -18,7 +18,7 @@ from homeassistant.const import CONF_API_KEY, CONF_NAME
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from jevclient import JevAuthError, JevClient, JevError, Noul
+from jevclient import MAX_SCORE_LEVELS, JevAuthError, JevClient, JevError, Noul
 
 from .const import (
     CONF_AREA,
@@ -201,9 +201,13 @@ class JevAutopilotOptionsFlow(OptionsFlow):
                 (CONF_HEATING_LEVELS, parse_heating_levels),
             ):
                 try:
-                    parser(user_input[key])
+                    parsed = parser(user_input[key])
                 except ValueError:
                     errors[key] = "invalid_levels"
+                    continue
+                # Brightness is asked as a score, which the API caps at ten levels.
+                if key == CONF_BRIGHTNESS_LEVELS and len(parsed) > MAX_SCORE_LEVELS:
+                    errors[key] = "too_many_levels"
             if not errors:
                 return self.async_create_entry(data=user_input)
 

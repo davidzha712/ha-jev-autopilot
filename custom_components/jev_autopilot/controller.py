@@ -334,35 +334,41 @@ class RoomController:
             self.paused = False
             self._notify_entities()
             await self._take_automations()
-        confirm = set(self.confirm_entities)
-        snapshots = [
-            snap
-            for entity_id in self.controlled
-            if (snap := snapshot(self.hass, entity_id, confirm=entity_id in confirm))
-        ]
-        # Question text leaves the house too, so names are scrubbed there as well.
-        # The unscrubbed snapshots stay for deciding and for the phone notification.
-        users = self.runtime.user_names
-        plan = build_plan(
-            scrub_for(self.hass, self.name, users),
-            [
-                dataclasses.replace(snap, name=scrub_for(self.hass, snap.name, users))
-                for snap in snapshots
-            ],
-            self.levels,
-        )
-        if not plan.questions:
+        # A bad level template or an odd entity state fails here, before any call.
+        # It must count towards degrading, or the room keeps its automations off.
+        try:
+            confirm = set(self.confirm_entities)
+            snapshots = [
+                snap
+                for entity_id in self.controlled
+                if (snap := snapshot(self.hass, entity_id, confirm=entity_id in confirm))
+            ]
+            # Question text leaves the house too, so names are scrubbed there as well.
+            # The unscrubbed snapshots stay for deciding and for the phone notification.
+            users = self.runtime.user_names
+            plan = build_plan(
+                scrub_for(self.hass, self.name, users),
+                [
+                    dataclasses.replace(snap, name=scrub_for(self.hass, snap.name, users))
+                    for snap in snapshots
+                ],
+                self.levels,
+            )
+            if not plan.questions:
+                return
+            state = build_state(
+                self.hass,
+                room=self.name,
+                controlled=self.controlled,
+                context=list(self.data.get(CONF_CONTEXT, [])),
+                overrides=self.history.last_override,
+                house_notes=self.house_notes,
+                room_notes=self.data.get(CONF_ROOM_NOTES, "") or "",
+                extra_names=users,
+            )
+        except Exception as err:
+            await self._failed(repr(err))
             return
-        state = build_state(
-            self.hass,
-            room=self.name,
-            controlled=self.controlled,
-            context=list(self.data.get(CONF_CONTEXT, [])),
-            overrides=self.history.last_override,
-            house_notes=self.house_notes,
-            room_notes=self.data.get(CONF_ROOM_NOTES, "") or "",
-            extra_names=users,
-        )
         try:
             response = await self.runtime.ask(state, plan.questions)
         except JevAuthError:
@@ -420,7 +426,6 @@ class RoomController:
         await self._recover()
         # A recovery clears degraded; a pause or auth failure meanwhile still holds.
         if not self.in_control:
-            self.failures = 0
             return
         names = {s.entity_id: s.name for s in snapshots}
         done: list[str] = []

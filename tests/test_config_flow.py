@@ -115,6 +115,11 @@ async def test_options_validate_levels(hass: HomeAssistant, jev) -> None:
     bad = {**base, CONF_BRIGHTNESS_LEVELS: "bright"}
     result = await hass.config_entries.options.async_configure(result["flow_id"], bad)
     assert result["errors"] == {CONF_BRIGHTNESS_LEVELS: "invalid_levels"}
+    # A score question carries at most ten levels; the eleventh would fail every run.
+    eleven = ", ".join(str(n) for n in range(0, 110, 10))
+    bad = {**base, CONF_BRIGHTNESS_LEVELS: eleven}
+    result = await hass.config_entries.options.async_configure(result["flow_id"], bad)
+    assert result["errors"] == {CONF_BRIGHTNESS_LEVELS: "too_many_levels"}
     result = await hass.config_entries.options.async_configure(result["flow_id"], base)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_PRESET] == "conservative"

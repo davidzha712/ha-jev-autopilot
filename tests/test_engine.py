@@ -201,6 +201,7 @@ def test_climate_rules():
     )
     assert run([trv], {("heat", "climate.t"): choice("20")}).actions == []
     assert run([trv], {("heat", "climate.t"): choice("22", 0.5)}).actions == []
+    assert run([trv], {("heat", "climate.t"): choice("22", float("nan"))}).actions == []
     (a,) = run([trv], {("heat", "climate.t"): choice("17")}).actions
     assert a.service == "set_temperature" and a.data == {"temperature": 17.0}
     (a,) = run([trv], {("heat", "climate.t"): choice("off")}).actions

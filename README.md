@@ -111,7 +111,7 @@ An entity can belong to one room only.
 | Confirmation threshold | 0.90 | Floor 0.80. Minimum probability before anything is proposed |
 | Daily call budget | 3000 | Rooms pause and hand back when reached; resets at midnight |
 | Re-check every | 10 min | Floor 2 min. Sensor changes also trigger a check (30 s debounce) |
-| Brightness levels (%) | `10, 30, 50, 75, 100` | Your scale; Jev picks a point on it |
+| Brightness levels (%) | `10, 30, 50, 75, 100` | Your scale, 2 to 10 levels; Jev picks a point on it |
 | Colour temperature levels (K) | `2700, 3500, 4000` | Warm to cool |
 | Heating levels (°C) | `off, 17, 20, 22` | `off` allowed as the first value |
 | House notes | — | Habits for the whole house, sent with every call |

@@ -488,7 +488,11 @@ def _decide_light(
 
 
 def _decide_climate(entity: EntitySnapshot, answer: Answer | None) -> Action | None:
-    if not isinstance(answer, ChoiceAnswer) or answer.confidence < CLIMATE_MIN_CONFIDENCE:
+    # Written as `not >=` so a NaN confidence counts as too low.
+    if (
+        not isinstance(answer, ChoiceAnswer)
+        or not answer.confidence >= CLIMATE_MIN_CONFIDENCE
+    ):
         return None
     reason = f"heating {answer.choice} (confidence {answer.confidence:.2f})"
     if answer.choice == "off":

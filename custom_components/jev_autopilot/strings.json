@@ -71,7 +71,8 @@
       }
     },
     "error": {
-      "invalid_levels": "Use at least two comma-separated numbers."
+      "invalid_levels": "Use at least two comma-separated numbers.",
+      "too_many_levels": "Use at most 10 levels."
     }
   },
   "config_subentries": {

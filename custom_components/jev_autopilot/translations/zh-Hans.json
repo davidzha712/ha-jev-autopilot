@@ -71,7 +71,8 @@
       }
     },
     "error": {
-      "invalid_levels": "至少填两个用逗号分隔的数字。"
+      "invalid_levels": "至少填两个用逗号分隔的数字。",
+      "too_many_levels": "最多填 10 档。"
     }
   },
   "config_subentries": {
