@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "连接 Jev",
-        "description": "Jev Autopilot 询问 TypeSafe Jev 每个房间需要什么，然后执行。可直连 TypeSafe API，或用 OpenRouter：Base URL 填 `https://openrouter.ai/api`，模型填 `typesafe/jev-1.13`。",
+        "description": "Jev Autopilot 询问 TypeSafe Jev 每个房间需要什么，然后执行。可直连 TypeSafe API，或用 OpenRouter：Base URL 填 `{openrouter_url}`，模型填 `typesafe/jev-1.13`。",
         "data": {
           "api_key": "API 密钥",
           "base_url": "Base URL",

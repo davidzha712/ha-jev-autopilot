@@ -9,6 +9,7 @@ DOMAIN: Final = "jev_autopilot"
 CONF_BASE_URL: Final = "base_url"
 CONF_MODEL: Final = "model"
 DEFAULT_BASE_URL: Final = "https://api.typesafe.ai"
+OPENROUTER_URL: Final = "https://openrouter.ai/api"
 DEFAULT_MODEL: Final = "jev-latest"
 REQUEST_TIMEOUT_S: Final = 20.0
 

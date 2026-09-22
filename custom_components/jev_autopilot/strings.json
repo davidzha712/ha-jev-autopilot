@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to Jev",
-        "description": "Jev Autopilot asks TypeSafe Jev what each room needs and acts on the answer. Use the TypeSafe API directly, or OpenRouter with base URL `https://openrouter.ai/api` and model `typesafe/jev-1.13`.",
+        "description": "Jev Autopilot asks TypeSafe Jev what each room needs and acts on the answer. Use the TypeSafe API directly, or OpenRouter with base URL `{openrouter_url}` and model `typesafe/jev-1.13`.",
         "data": {
           "api_key": "[%key:common::config_flow::data::api_key%]",
           "base_url": "Base URL",

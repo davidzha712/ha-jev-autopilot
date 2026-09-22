@@ -53,6 +53,7 @@ from .const import (
     DOMAIN,
     MIN_CONFIRM_THRESHOLD,
     MIN_PATROL,
+    OPENROUTER_URL,
     REQUEST_TIMEOUT_S,
     SUBENTRY_ROOM,
 )
@@ -129,6 +130,7 @@ class JevAutopilotConfigFlow(ConfigFlow, domain=DOMAIN):
                 _setup_schema({}), user_input or {}
             ),
             errors=errors,
+            description_placeholders={"openrouter_url": OPENROUTER_URL},
         )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
