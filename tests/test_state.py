@@ -156,3 +156,34 @@ def test_scrub_matches_cjk_and_any_case() -> None:
     assert scrub("ALICE and alice", ["Alice"]) == "a resident and a resident"
     # A name inside a longer Latin word is left alone.
     assert scrub("Alicent", ["Alice"]) == "Alicent"
+
+
+def test_scrub_addresses_next_to_letters_and_cjk() -> None:
+    for text in ("打印机192.168.1.20", "nas_192.168.1.5", "host192.168.1.5."):
+        assert "192.168" not in scrub(text, [])
+    assert scrub("version 1.2.3.4.5", []) == "version 1.2.3.4.5"
+
+
+def test_scrub_known_entity_ids_only() -> None:
+    text = "last: light.bedroom_lamp, temp 21.5, see example.com"
+    assert scrub(text, [], {"light.bedroom_lamp"}) == (
+        "last: a device, temp 21.5, see example.com"
+    )
+
+
+async def test_name_parts_and_users_are_scrubbed(hass: HomeAssistant) -> None:
+    hass.states.async_set("person.alice", "home", {"friendly_name": "Alice Smith"})
+    hass.states.async_set("sensor.last", "light.lamp", {"friendly_name": "Last used"})
+    hass.states.async_set("light.lamp", "on", {"friendly_name": "Lamp"})
+    text = build_state(
+        hass,
+        room="R",
+        controlled=[],
+        context=["sensor.last"],
+        overrides={},
+        house_notes="Alice works here; so does Bob.",
+        room_notes="",
+        extra_names=["Bob"],
+    )
+    for leak in ("Alice", "Bob", "light.lamp"):
+        assert leak not in text

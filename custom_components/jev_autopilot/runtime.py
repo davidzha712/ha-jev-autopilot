@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.components import persistent_notification
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
@@ -58,9 +59,11 @@ async def async_release_stored(hass: HomeAssistant, entry_id: str) -> None:
     """On entry removal: hand back whatever is still held, then delete the file."""
     store = entry_store(hass, entry_id)
     data = await store.async_load() or {}
+    left: list[str] = []
     for automations in data.get("taken", {}).values():
         for automation in automations:
             if hass.states.get(automation) is None:
+                left.append(automation)
                 continue
             try:
                 await hass.services.async_call(
@@ -68,6 +71,17 @@ async def async_release_stored(hass: HomeAssistant, entry_id: str) -> None:
                 )
             except HomeAssistantError as err:
                 _LOGGER.warning("automation.turn_on %s failed: %s", automation, err)
+                left.append(automation)
+    if left:
+        # Nothing of this integration is left to retry later, so a person must.
+        persistent_notification.async_create(
+            hass,
+            "Jev Autopilot was removed but could not turn these automations back on. "
+            "Turn them on yourself if you still want them:\n"
+            + "\n".join(f"- {a}" for a in sorted(set(left))),
+            title="Jev Autopilot: automations still off",
+            notification_id=f"{DOMAIN}_{entry_id}_left_off",
+        )
     await store.async_remove()
 
 
@@ -97,6 +111,8 @@ class Runtime:
         self.log: deque[dict[str, Any]] = deque(maxlen=LOG_SIZE)
         self.taken: dict[str, list[str]] = {}
         self.presets: dict[str, str] = {}
+        # Home Assistant users' names, kept out of prompts like residents' names.
+        self.user_names: list[str] = []
         self._closed = False
         self._store = entry_store(hass, entry.entry_id)
         self._sleep: Callable[[float], Coroutine[Any, Any, None]] = asyncio.sleep
@@ -108,6 +124,11 @@ class Runtime:
         self.log.extend(data.get("log", []))
         self.taken = {k: list(v) for k, v in data.get("taken", {}).items()}
         self.presets = dict(data.get("presets", {}))
+        self.user_names = [
+            user.name
+            for user in await self.hass.auth.async_get_users()
+            if user.name and not user.system_generated
+        ]
         counters = data.get("counters", {})
         if counters.get("day") == self._day.isoformat():
             self.calls_today = int(counters.get("calls", 0))
@@ -140,11 +161,14 @@ class Runtime:
     # --- automations handed back ---
 
     async def async_release(self, owner: str) -> None:
-        """Turn back on what `owner` turned off. Keep what cannot be found yet."""
-        missing = []
-        for automation in self.taken.pop(owner, []):
+        """Turn back on what `owner` turned off. Keep what cannot be found yet.
+
+        Each automation leaves the record only once it is back on, so a release
+        cancelled halfway still knows what is left.
+        """
+        held = self.taken.get(owner, [])
+        for automation in list(held):
             if self.hass.states.get(automation) is None:
-                missing.append(automation)
                 continue
             try:
                 await self.hass.services.async_call(
@@ -152,9 +176,11 @@ class Runtime:
                 )
             except HomeAssistantError as err:
                 _LOGGER.warning("automation.turn_on %s failed: %s", automation, err)
-                missing.append(automation)
-        if missing:
-            self.taken[owner] = missing
+                continue
+            held.remove(automation)
+            self.async_save()
+        if not held:
+            self.taken.pop(owner, None)
         self.async_save()
 
     async def async_release_orphans(self) -> None:

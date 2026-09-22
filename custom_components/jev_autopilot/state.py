@@ -7,7 +7,7 @@ not the identities, and the state leaves the house.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from datetime import datetime
 
 from homeassistant.core import HomeAssistant, State
@@ -110,6 +110,7 @@ def build_state(
     overrides: Mapping[str, float],
     house_notes: str,
     room_notes: str,
+    extra_names: Sequence[str] = (),
 ) -> str:
     """The situation as plain text, one fact per line."""
     now = dt_util.now()
@@ -153,19 +154,39 @@ def build_state(
         lines.append(f"About the house: {house_notes.strip()}")
     if room_notes.strip():
         lines.append(f"About this room: {room_notes.strip()}")
-    return scrub("\n".join(lines), resident_names(hass))
+    return scrub_for(hass, "\n".join(lines), extra_names)
 
 
-_IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+# Lookarounds, not \b: \b treats CJK letters and "_" as word characters, so
+# "打印机192.168.1.20" or "nas_192.168.1.5" would keep the address.
+_IPV4 = re.compile(r"(?<!\d)(?<!\d\.)(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)")
+_ENTITY_ID = re.compile(r"(?<![A-Za-z0-9_.])[a-z_][a-z0-9_]*\.[a-z0-9_]+(?![A-Za-z0-9_])")
+_MIN_NAME_PART = 2
 
 
-def resident_names(hass: HomeAssistant) -> list[str]:
-    """Names of the people Home Assistant knows about, to keep them out of prompts."""
-    return [s.name for s in hass.states.async_all("person")]
+def resident_names(hass: HomeAssistant, extra: Iterable[str] = ()) -> list[str]:
+    """People Home Assistant knows about, as full names and as their parts.
+
+    `extra` carries the names of Home Assistant users, which only the runtime can
+    read because listing users is a coroutine.
+    """
+    names: set[str] = set()
+    for full in [*(s.name for s in hass.states.async_all("person")), *extra]:
+        full = full.strip()
+        if not full:
+            continue
+        names.add(full)
+        names.update(part for part in full.split() if len(part) >= _MIN_NAME_PART)
+    return sorted(names)
 
 
-def scrub(text: str, residents: Iterable[str]) -> str:
-    """Last line of defence for names users put in friendly names or notes."""
+def scrub(text: str, residents: Iterable[str], entity_ids: Collection[str] = ()) -> str:
+    """Last line of defence for ids, names and addresses in names, states or notes."""
+    if entity_ids:
+        known = set(entity_ids)
+        text = _ENTITY_ID.sub(
+            lambda m: "a device" if m.group(0) in known else m.group(0), text
+        )
     text = _IPV4.sub("[address]", text)
     for name in sorted(
         {n.strip() for n in residents if n.strip()}, key=len, reverse=True
@@ -179,6 +200,11 @@ def scrub(text: str, residents: Iterable[str]) -> str:
             flags=re.IGNORECASE,
         )
     return text
+
+
+def scrub_for(hass: HomeAssistant, text: str, extra_names: Iterable[str] = ()) -> str:
+    """scrub() with everything this Home Assistant knows about."""
+    return scrub(text, resident_names(hass, extra_names), hass.states.async_entity_ids())
 
 
 def _first(hass: HomeAssistant, domain: str) -> State | None:

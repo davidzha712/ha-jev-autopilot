@@ -7,6 +7,7 @@ import contextlib
 from typing import Any
 
 import pytest
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import Context, Event, HomeAssistant, ServiceCall
 from homeassistant.helpers import issue_registry as ir
@@ -528,3 +529,48 @@ async def test_confirmation_after_unload_does_nothing(hass, jev, calls) -> None:
     # The listener is gone after unload; call the handler as a late tap would.
     await runtime.async_handle_action(Event("x", {"action": f"JEVAP_RUN_{token}"}))
     assert calls["lock"] == []
+
+
+async def test_release_cancelled_halfway_keeps_the_rest(hass, jev, calls) -> None:
+    hass.states.async_set("automation.second", "on")
+    entry, controller = await setup(hass)
+    runtime = entry.runtime_data
+    runtime.taken[controller.subentry_id] = ["automation.old_lights", "automation.second"]
+    gate = asyncio.Event()
+    held = asyncio.Event()
+
+    async def turn_on(call: ServiceCall) -> None:
+        held.set()
+        await gate.wait()
+
+    hass.services.async_register("automation", "turn_on", turn_on)
+    release = hass.async_create_task(runtime.async_release(controller.subentry_id))
+    await asyncio.wait_for(held.wait(), 5)
+    release.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await release
+    gate.set()
+    await hass.async_block_till_done()
+    assert runtime.taken[controller.subentry_id] == [
+        "automation.old_lights",
+        "automation.second",
+    ]
+
+
+async def test_removal_that_cannot_hand_back_tells_the_user(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    hass.states.async_remove("automation.old_lights")
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    notes = persistent_notification._async_get_or_create_notifications(hass)
+    (note,) = [n for n in notes.values() if "automation.old_lights" in n["message"]]
+    assert "still off" in note["title"]
+
+
+async def test_enable_after_unload_does_nothing(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    offs = len(calls["auto_off"])
+    await controller.async_set_enabled(True)
+    assert len(calls["auto_off"]) == offs

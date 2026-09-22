@@ -73,7 +73,7 @@ from .engine import (
     parse_heating_levels,
     parse_int_levels,
 )
-from .state import build_state, resident_names, scrub, snapshot
+from .state import build_state, scrub_for, snapshot
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigSubentry
@@ -235,6 +235,8 @@ class RoomController:
             await self._release_automations()
 
     async def async_set_enabled(self, enabled: bool) -> None:
+        if self._stopped:
+            return
         self.enabled = enabled
         if enabled:
             await self._take_automations()
@@ -335,11 +337,11 @@ class RoomController:
         ]
         # Question text leaves the house too, so names are scrubbed there as well.
         # The unscrubbed snapshots stay for deciding and for the phone notification.
-        residents = resident_names(self.hass)
+        users = self.runtime.user_names
         plan = build_plan(
-            scrub(self.name, residents),
+            scrub_for(self.hass, self.name, users),
             [
-                dataclasses.replace(snap, name=scrub(snap.name, residents))
+                dataclasses.replace(snap, name=scrub_for(self.hass, snap.name, users))
                 for snap in snapshots
             ],
             self.levels,
@@ -354,6 +356,7 @@ class RoomController:
             overrides=self.history.last_override,
             house_notes=self.house_notes,
             room_notes=self.data.get(CONF_ROOM_NOTES, "") or "",
+            extra_names=users,
         )
         try:
             response = await self.runtime.ask(state, plan.questions)

@@ -39,12 +39,17 @@ detection and the confirmation tier all live in plain Python with tests.
   unreachable 3 times in a row, when the daily budget is spent, or when the API key
   is rejected.
 - **Private by construction.** The text sent to Jev contains device names, states
-  and sensor values. It never contains entity ids, and residents appear only as a
-  count ("2 of 3 at home"). Residents' names are replaced with "a resident" and IPv4
-  addresses with "[address]" wherever they turn up, including device names, room
-  names, the questions themselves and your notes. Matching ignores case. Any other
-  personal detail you type into a name or a note is sent as written. A device without
-  a friendly name is sent under a name Home Assistant derives from its entity id.
+  and sensor values. Residents appear only as a count ("2 of 3 at home"). Before
+  anything is sent, including device names, room names, sensor states, the
+  questions themselves and your notes:
+  - any entity id Home Assistant knows is replaced with "a device";
+  - the names of people and Home Assistant users, whole or any single word of them
+    two letters or longer, are replaced with "a resident", ignoring case;
+  - IPv4 addresses are replaced with "[address]".
+
+  Any other personal detail you type into a name or a note is sent as written. A
+  device without a friendly name is sent under a name Home Assistant derives from
+  its entity id.
 
 ## Installation
 
@@ -165,7 +170,9 @@ provider's current price; the cost sensor uses the token counts the API returns.
 
 Delete the integration under *Settings → Devices & services*. Automations it had
 turned off are turned back on during unload. Removing a single room does the same
-for that room.
+for that room. If an automation cannot be turned back on when the entry is removed
+(it no longer exists, or the call fails), a notification lists it so you can turn
+it on yourself.
 
 ## Development
 
