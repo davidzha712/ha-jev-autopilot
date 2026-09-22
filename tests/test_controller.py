@@ -649,6 +649,17 @@ async def test_failure_before_the_ask_still_degrades(hass, jev, calls) -> None:
     assert [c.data["entity_id"] for c in calls["auto_on"]] == ["automation.old_lights"]
 
 
+async def test_non_finite_reply_counts_as_a_failure(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    jev.policy["on"] = NoulAnswer(float("nan"))
+    for _ in range(3):
+        await controller.async_run()
+    await hass.async_block_till_done()
+    assert controller.failures == 3
+    assert hass.states.get("sensor.living_room_status").state == "degraded"
+    assert [c.data["entity_id"] for c in calls["auto_on"]] == ["automation.old_lights"]
+
+
 async def test_invalid_service_data_is_a_failed_call_not_a_crash(
     hass, jev, calls
 ) -> None:

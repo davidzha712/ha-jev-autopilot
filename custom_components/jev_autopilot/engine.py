@@ -323,7 +323,7 @@ def decide(
         answer = answers.get(key)
         # A malformed reply can carry NaN or infinity, which slips past every
         # threshold comparison. Such an answer is not acted on at all.
-        if answer is None or not _finite(answer):
+        if answer is None or not finite_answer(answer):
             continue
         # A choice outside the options we offered cannot be acted on; drop it.
         question = plan.questions.get(key)
@@ -391,7 +391,7 @@ def _plain(got: Mapping[str, Answer]) -> dict[str, Any]:
     return out
 
 
-def _finite(answer: Answer) -> bool:
+def finite_answer(answer: Answer) -> bool:
     values = (getattr(answer, name, 0.0) for name in ("noul", "score", "confidence"))
     return all(math.isfinite(value) for value in values)
 

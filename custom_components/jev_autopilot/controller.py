@@ -71,6 +71,7 @@ from .engine import (
     Preset,
     build_plan,
     decide,
+    finite_answer,
     parse_heating_levels,
     parse_int_levels,
 )
@@ -414,6 +415,11 @@ class RoomController:
     async def _act(
         self, plan: Plan, snapshots: list[EntitySnapshot], response: JevResponse
     ) -> None:
+        # NaN or infinity parses as a float, so the client accepts it. It is still a
+        # malformed reply and must count towards degrading, not reset the failures.
+        bad = sorted(k for k, a in response.answers.items() if not finite_answer(a))
+        if bad:
+            raise ValueError(f"non-finite answers for {bad}")
         now = time.time()
         self.history.blocked = self.runtime.blocked_keys(now)
         decision = decide(
