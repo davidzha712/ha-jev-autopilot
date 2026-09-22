@@ -1,0 +1,125 @@
+# Where this integration stands against Home Assistant's integration quality scale.
+# A custom integration is scored "Custom", not a tier. This file is the target, and
+# every "done" is checked in the test suite or in CI, not claimed.
+
+rules:
+  # Bronze
+  action-setup:
+    status: exempt
+    comment: The integration registers no actions.
+  appropriate-polling:
+    status: done
+    comment: >-
+      No polling of devices. A room is evaluated after a 30 s debounce on changes to
+      its context sensors, plus a patrol timer (default 10 min) so slow drifts such as
+      dusk are seen. Every evaluation is a paid call, and a daily budget caps them.
+  brands:
+    status: done
+    comment: icon and dark_icon (+@2x) ship in custom_components/jev_autopilot/brand.
+  common-modules: done
+  config-flow-test-coverage: done
+  config-flow: done
+  dependency-transparency:
+    status: done
+    comment: jevclient is MIT, source public, published to PyPI.
+  docs-actions:
+    status: exempt
+    comment: No actions.
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  entity-event-setup: done
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure:
+    status: done
+    comment: The config flow asks one short question against the address the entry will use.
+  test-before-setup:
+    status: todo
+    comment: >-
+      Setup does not call the API. A bad key is caught on the first room evaluation,
+      which stops calling and starts the reauth flow.
+  unique-config-entry:
+    status: done
+    comment: single_config_entry in the manifest; rooms are subentries.
+
+  # Silver
+  action-exceptions:
+    status: exempt
+    comment: No actions.
+  config-entry-unloading:
+    status: done
+    comment: Unload stops every room and hands taken-over automations back.
+  docs-configuration-parameters: done
+  docs-installation-parameters: done
+  entity-unavailable:
+    status: exempt
+    comment: >-
+      Entities describe the integration's own state, which is always known. An
+      unreachable API shows as the room status "degraded", with a repair issue.
+  integration-owner: done
+  log-when-unavailable:
+    status: done
+    comment: Warnings until a room degrades, then debug; one info line on recovery.
+  parallel-updates: done
+  reauthentication-flow: done
+  test-coverage:
+    status: done
+    comment: Measured by pytest-cov in CI.
+
+  # Gold
+  devices:
+    status: done
+    comment: One service device per room, plus one for the global counters.
+  diagnostics:
+    status: done
+    comment: The API key is redacted, and a test asserts it never appears.
+  discovery:
+    status: exempt
+    comment: A cloud service reached with an API key.
+  discovery-update-info:
+    status: exempt
+    comment: No discovery.
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices:
+    status: exempt
+    comment: A service, not a device.
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: done
+  dynamic-devices:
+    status: done
+    comment: Adding a room subentry reloads the entry and creates its device.
+  entity-category: done
+  entity-device-class: done
+  entity-disabled-by-default:
+    status: exempt
+    comment: Every entity is part of the everyday view.
+  entity-translations: done
+  exception-translations:
+    status: exempt
+    comment: The integration raises no user-facing exceptions.
+  icon-translations:
+    status: done
+    comment: A test asserts icons.json covers every translated entity.
+  reconfiguration-flow:
+    status: done
+    comment: Main entry (key, address, model) and each room can be reconfigured.
+  repair-issues:
+    status: done
+    comment: Daily budget reached, and a room degraded after repeated failures.
+  stale-devices:
+    status: done
+    comment: Removing a room removes its device; a test asserts it.
+
+  # Platinum
+  async-dependency: done
+  inject-websession:
+    status: done
+    comment: The client takes Home Assistant's shared aiohttp session.
+  strict-typing:
+    status: done
+    comment: mypy --strict passes, enforced in CI.

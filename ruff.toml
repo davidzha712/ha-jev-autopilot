@@ -1,0 +1,11 @@
+target-version = "py313"
+line-length = 90
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "ASYNC", "PTH", "C4"]
+# Long lines left after `ruff format` are prompt strings; wrapping them hurts reading.
+# Chinese notification text needs full-width punctuation.
+ignore = ["E501", "RUF001"]
+
+[lint.per-file-ignores]
+"tests/*" = ["RUF059"]

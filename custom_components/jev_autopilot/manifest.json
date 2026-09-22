@@ -1,0 +1,15 @@
+{
+  "domain": "jev_autopilot",
+  "name": "Jev Autopilot",
+  "after_dependencies": ["mobile_app", "automation"],
+  "codeowners": ["@davidzha712"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/davidzha712/ha-jev-autopilot",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/davidzha712/ha-jev-autopilot/issues",
+  "requirements": ["jevclient==1.2.0"],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}

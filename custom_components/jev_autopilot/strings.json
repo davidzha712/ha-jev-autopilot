@@ -1,0 +1,195 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Jev",
+        "description": "Jev Autopilot asks TypeSafe Jev what each room needs and acts on the answer. Use the TypeSafe API directly, or OpenRouter with base URL `{openrouter_url}` and model `typesafe/jev-1.13`.",
+        "data": {
+          "api_key": "[%key:common::config_flow::data::api_key%]",
+          "base_url": "Base URL",
+          "model": "Model"
+        },
+        "data_description": {
+          "api_key": "TypeSafe or OpenRouter API key.",
+          "base_url": "Without the /v1/systemone path.",
+          "model": "Model name sent with each request."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Jev rejected the API key",
+        "description": "Enter a new API key. Rooms keep their settings.",
+        "data": {
+          "api_key": "[%key:common::config_flow::data::api_key%]"
+        }
+      },
+      "reconfigure": {
+        "title": "Change the connection",
+        "description": "Leave the API key empty to keep the current one.",
+        "data": {
+          "api_key": "[%key:common::config_flow::data::api_key%]",
+          "base_url": "Base URL",
+          "model": "Model"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]"
+    },
+    "abort": {
+      "single_instance_allowed": "[%key:common::config_flow::abort::single_instance_allowed%]",
+      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]",
+      "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Autopilot behaviour",
+        "data": {
+          "preset": "Default preset",
+          "notify_services": "Ask for confirmation on",
+          "confirm_threshold": "Confirmation threshold",
+          "daily_call_budget": "Daily call budget",
+          "patrol_minutes": "Re-check every",
+          "brightness_levels": "Brightness levels (%)",
+          "color_temp_levels": "Colour temperature levels (K)",
+          "heating_levels": "Heating levels (°C)",
+          "house_notes": "House notes"
+        },
+        "data_description": {
+          "preset": "How sure Jev must be before a room acts. Used by every room that has no preset of its own; picking one on the room's preset select overrides it.",
+          "notify_services": "Mobile app notify services. Locks and other confirm-tier devices are only proposed here, never switched directly.",
+          "confirm_threshold": "Minimum probability before a confirm-tier action is even proposed.",
+          "daily_call_budget": "Rooms pause when this many calls were made today. Jev charges per input token only.",
+          "patrol_minutes": "Rooms also re-check on sensor changes (debounced 30 s).",
+          "brightness_levels": "Comma-separated, ascending. Jev picks a point on this scale.",
+          "color_temp_levels": "Comma-separated kelvin, warm to cool.",
+          "heating_levels": "Comma-separated; `off` is allowed as the first value.",
+          "house_notes": "Plain-language habits for the whole house, e.g. 'We sleep around 23:30; nobody likes bright light after 22:00.'"
+        }
+      }
+    },
+    "error": {
+      "invalid_levels": "Use at least two comma-separated numbers.",
+      "too_many_levels": "Use at most 10 levels.",
+      "brightness_range": "Brightness levels are percentages from 1 to 100."
+    }
+  },
+  "config_subentries": {
+    "room": {
+      "entry_type": "Room",
+      "initiate_flow": {
+        "user": "Add room"
+      },
+      "step": {
+        "user": {
+          "title": "Add a room",
+          "description": "Pick what this room controls and what it should look at. Devices under 'Ask first' are only ever proposed to your phone.",
+          "data": {
+            "name": "[%key:common::config_flow::data::name%]",
+            "area": "Area",
+            "lights": "Lights",
+            "switches": "Switches",
+            "fans": "Fans",
+            "climates": "Thermostats",
+            "media_players": "Media players (turned off only)",
+            "confirm_entities": "Ask first (locks, risky outlets)",
+            "context_entities": "Context sensors",
+            "yield_automations": "Automations to replace",
+            "room_notes": "Room notes"
+          },
+          "data_description": {
+            "context_entities": "Motion, occupancy, lux, temperature, door sensors. Changes trigger a re-check.",
+            "yield_automations": "Turned off while the autopilot runs this room, turned back on when it stops or fails.",
+            "room_notes": "Plain-language habits for this room, e.g. 'Desk work until 18:00, cosy light in the evening.'"
+          }
+        },
+        "reconfigure": {
+          "title": "Edit room",
+          "data": {
+            "name": "[%key:common::config_flow::data::name%]",
+            "area": "Area",
+            "lights": "Lights",
+            "switches": "Switches",
+            "fans": "Fans",
+            "climates": "Thermostats",
+            "media_players": "Media players (turned off only)",
+            "confirm_entities": "Ask first (locks, risky outlets)",
+            "context_entities": "Context sensors",
+            "yield_automations": "Automations to replace",
+            "room_notes": "Room notes"
+          }
+        }
+      },
+      "error": {
+        "no_entities": "Select at least one device to control.",
+        "duplicate_entity": "A device can only be in one list.",
+        "entity_in_other_room": "This device already belongs to another room.",
+        "automation_in_other_room": "This automation is already replaced by another room."
+      },
+      "abort": {
+        "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
+      }
+    }
+  },
+  "selector": {
+    "preset": {
+      "options": {
+        "conservative": "Conservative: acts only when very sure",
+        "balanced": "Balanced",
+        "aggressive": "Aggressive: acts early, backs off fast"
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "autopilot": {
+        "name": "Autopilot"
+      }
+    },
+    "select": {
+      "preset": {
+        "name": "Preset",
+        "state": {
+          "conservative": "Conservative",
+          "balanced": "Balanced",
+          "aggressive": "Aggressive"
+        }
+      }
+    },
+    "sensor": {
+      "last_decision": {
+        "name": "Last decision"
+      },
+      "status": {
+        "name": "Status",
+        "state": {
+          "ok": "OK",
+          "disabled": "Disabled",
+          "degraded": "Degraded",
+          "paused": "Paused (budget)"
+        }
+      },
+      "overrides_today": {
+        "name": "Manual overrides today"
+      },
+      "calls_today": {
+        "name": "Calls today"
+      },
+      "cost_today": {
+        "name": "Cost today"
+      }
+    }
+  },
+  "issues": {
+    "budget_reached": {
+      "title": "Jev Autopilot reached its daily budget",
+      "description": "All rooms paused after {budget} calls today and your automations are in charge until midnight. Raise the budget in the integration options if this happens often."
+    },
+    "room_degraded": {
+      "title": "Jev Autopilot handed {room} back",
+      "description": "Three calls in a row failed ({error}). The replaced automations are running again. The room takes over by itself after the next successful call."
+    }
+  }
+}

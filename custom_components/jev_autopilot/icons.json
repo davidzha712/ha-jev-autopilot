@@ -1,0 +1,20 @@
+{
+  "entity": {
+    "switch": {
+      "autopilot": { "default": "mdi:robot", "state": { "off": "mdi:robot-off" } }
+    },
+    "select": {
+      "preset": { "default": "mdi:tune-variant" }
+    },
+    "sensor": {
+      "last_decision": { "default": "mdi:head-lightbulb" },
+      "status": {
+        "default": "mdi:check-circle",
+        "state": { "disabled": "mdi:pause-circle", "degraded": "mdi:alert-circle", "paused": "mdi:cash-lock" }
+      },
+      "overrides_today": { "default": "mdi:hand-back-right" },
+      "calls_today": { "default": "mdi:counter" },
+      "cost_today": { "default": "mdi:currency-usd" }
+    }
+  }
+}
