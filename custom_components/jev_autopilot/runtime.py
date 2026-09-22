@@ -140,6 +140,12 @@ class Runtime:
         if not self._closed:
             self._store.async_delay_save(self._data, 10)
 
+    async def async_save_now(self) -> None:
+        """Write at once: used before turning an automation off, so a crash cannot
+        lose the record of what must be turned back on."""
+        if not self._closed:
+            await self._store.async_save(self._data())
+
     def _data(self) -> dict[str, Any]:
         return {
             "log": list(self.log),
@@ -323,7 +329,7 @@ class Runtime:
                 target,
                 {"message": "clear_notification", "data": {"tag": f"jevap_{token}"}},
             )
-        if pending.expires <= time.time() or pending.room.stopped:
+        if pending.expires <= time.time() or not pending.room.in_control:
             return
         if run:
             await pending.room.async_execute(pending.action, confirmed=True)

@@ -316,6 +316,11 @@ def _room_error(
     taken = set().union(*(_room_entities(o) for o in others))
     if _room_entities(data) & taken:
         return "entity_in_other_room"
+    # Two rooms yielding one automation: the first to let go would turn it back on
+    # while the other still runs the room.
+    yielded = set().union(*(set(o.get(CONF_YIELD, [])) for o in others))
+    if set(data.get(CONF_YIELD, [])) & yielded:
+        return "automation_in_other_room"
     return None
 
 

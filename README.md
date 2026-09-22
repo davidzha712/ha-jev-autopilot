@@ -42,12 +42,17 @@ detection and the confirmation tier all live in plain Python with tests.
   and sensor values. Residents appear only as a count ("2 of 3 at home"). Before
   anything is sent, including device names, room names, sensor states, the
   questions themselves and your notes:
-  - any entity id Home Assistant knows is replaced with "a device";
-  - the names of people and Home Assistant users, whole or any single word of them
-    two letters or longer, are replaced with "a resident", ignoring case;
-  - IPv4 addresses are replaced with "[address]".
+  - any entity id Home Assistant knows, disabled ones included, is replaced with
+    "a device";
+  - the names of people and Home Assistant users are replaced with "a resident",
+    ignoring case: the whole name, any single word of it two letters or longer, and
+    for a Chinese name the given name (小明 for 王小明). A name may be followed by a
+    possessive or a number ("Annas Lampe", "Bob2");
+  - IPv4 addresses, and any longer run of dotted numbers around one, are replaced
+    with "[address]".
 
-  Any other personal detail you type into a name or a note is sent as written. A
+  A name glued to other letters ("BobPC") is not recognised. Any other personal
+  detail you type into a name or a note is sent as written. A
   device without a friendly name is sent under a name Home Assistant derives from
   its entity id.
 

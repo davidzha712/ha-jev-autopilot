@@ -11,6 +11,7 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from datetime import datetime
 
 from homeassistant.core import HomeAssistant, State
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
 from .engine import UNUSABLE_STATES, EntitySnapshot
@@ -159,8 +160,13 @@ def build_state(
 
 # Lookarounds, not \b: \b treats CJK letters and "_" as word characters, so
 # "打印机192.0.2.20" or "nas_192.0.2.5" would keep the address.
-_IPV4 = re.compile(r"(?<!\d)(?<!\d\.)(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)")
-_ENTITY_ID = re.compile(r"(?<![A-Za-z0-9_.])[a-z_][a-z0-9_]*\.[a-z0-9_]+(?![A-Za-z0-9_])")
+# A run of four or more dotted numbers is scrubbed whole, so an address cannot hide
+# inside something that looks like a version string.
+_IPV4 = re.compile(r"(?<!\d)(?<!\d\.)(?:\d{1,3}\.){3,}\d{1,3}(?!\d|\.\d)")
+# A name may carry a possessive or a number: "Annas Lampe", "Alice's", "Bob2".
+# An apostrophe possessive is kept ("a resident's lamp"); a bare "s" or a number goes.
+_NAME_SUFFIX = r"(['\u2019]s|s|\d+)?"
+_CJK = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]+")
 _MIN_NAME_PART = 2
 
 
@@ -177,16 +183,29 @@ def resident_names(hass: HomeAssistant, extra: Iterable[str] = ()) -> list[str]:
             continue
         names.add(full)
         names.update(part for part in full.split() if len(part) >= _MIN_NAME_PART)
+        # A Chinese name has no spaces: 王小明 is also called 小明, 欧阳娜娜 also 娜娜.
+        if _CJK.fullmatch(full) and len(full) >= 3:
+            names.update(
+                full[cut:] for cut in (1, 2) if len(full) - cut >= _MIN_NAME_PART
+            )
     return sorted(names)
+
+
+def _resident(match: re.Match[str]) -> str:
+    suffix = match.group(1) or ""
+    return "a resident's" if suffix[:1] in ("'", "\u2019") else "a resident"
 
 
 def scrub(text: str, residents: Iterable[str], entity_ids: Collection[str] = ()) -> str:
     """Last line of defence for ids, names and addresses in names, states or notes."""
     if entity_ids:
-        known = set(entity_ids)
-        text = _ENTITY_ID.sub(
-            lambda m: "a device" if m.group(0) in known else m.group(0), text
+        # Only known ids, longest first, so "light.kitchen_2" is not cut short. The
+        # left edge only refuses lowercase letters and "_", which could belong to a
+        # longer id; "Xlight.kitchen" or "2light.kitchen" still match.
+        alternatives = "|".join(
+            re.escape(e) for e in sorted(set(entity_ids), key=len, reverse=True)
         )
+        text = re.sub(rf"(?<![a-z_])(?:{alternatives})(?![a-z0-9_])", "a device", text)
     text = _IPV4.sub("[address]", text)
     for name in sorted(
         {n.strip() for n in residents if n.strip()}, key=len, reverse=True
@@ -194,8 +213,8 @@ def scrub(text: str, residents: Iterable[str], entity_ids: Collection[str] = ())
         # ASCII-only boundaries: \b treats CJK as word characters, so "张三的卧室"
         # would never match "张三".
         text = re.sub(
-            rf"(?<![A-Za-z0-9]){re.escape(name)}(?![A-Za-z0-9])",
-            "a resident",
+            rf"(?<![A-Za-z0-9]){re.escape(name)}{_NAME_SUFFIX}(?![A-Za-z0-9])",
+            _resident,
             text,
             flags=re.IGNORECASE,
         )
@@ -204,7 +223,9 @@ def scrub(text: str, residents: Iterable[str], entity_ids: Collection[str] = ())
 
 def scrub_for(hass: HomeAssistant, text: str, extra_names: Iterable[str] = ()) -> str:
     """scrub() with everything this Home Assistant knows about."""
-    return scrub(text, resident_names(hass, extra_names), hass.states.async_entity_ids())
+    # The registry also holds disabled entities, which have no state.
+    ids = {*hass.states.async_entity_ids(), *er.async_get(hass).entities}
+    return scrub(text, resident_names(hass, extra_names), ids)
 
 
 def _first(hass: HomeAssistant, domain: str) -> State | None:

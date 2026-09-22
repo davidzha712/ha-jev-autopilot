@@ -21,6 +21,7 @@ from custom_components.jev_autopilot.const import (
     CONF_PATROL,
     CONF_PRESET,
     CONF_SWITCHES,
+    CONF_YIELD,
     DOMAIN,
     SUBENTRY_ROOM,
 )
@@ -179,3 +180,20 @@ async def test_room_cannot_take_another_rooms_device(hass: HomeAssistant, jev) -
         result["flow_id"], {CONF_NAME: "Hall", CONF_SWITCHES: ["switch.b"]}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_room_cannot_yield_another_rooms_automation(
+    hass: HomeAssistant, jev
+) -> None:
+    entry = make_entry(
+        room("Kitchen", **{CONF_LIGHTS: ["light.a"], CONF_YIELD: ["automation.x"]})
+    )
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_ROOM), context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {CONF_NAME: "Hall", CONF_LIGHTS: ["light.b"], CONF_YIELD: ["automation.x"]},
+    )
+    assert result["errors"] == {"base": "automation_in_other_room"}

@@ -123,7 +123,8 @@
       "error": {
         "no_entities": "至少选择一个要控制的设备。",
         "duplicate_entity": "同一设备只能出现在一个列表里。",
-        "entity_in_other_room": "这个设备已经属于另一个房间。"
+        "entity_in_other_room": "这个设备已经属于另一个房间。",
+        "automation_in_other_room": "这个自动化已经被另一个房间接管。"
       },
       "abort": {
         "reconfigure_successful": "重新配置成功"

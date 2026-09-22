@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
-from custom_components.jev_autopilot.state import build_state, scrub, snapshot
+from custom_components.jev_autopilot.state import (
+    build_state,
+    resident_names,
+    scrub,
+    scrub_for,
+    snapshot,
+)
 
 
 async def test_snapshot_light_and_climate(hass: HomeAssistant) -> None:
@@ -161,7 +168,8 @@ def test_scrub_matches_cjk_and_any_case() -> None:
 def test_scrub_addresses_next_to_letters_and_cjk() -> None:
     for text in ("打印机192.0.2.20", "nas_192.0.2.5", "host192.0.2.5."):
         assert "192.0.2" not in scrub(text, [])
-    assert scrub("version 1.2.3.4.5", []) == "version 1.2.3.4.5"
+    # A longer dotted run is scrubbed whole rather than let an address through.
+    assert scrub("version 1.2.3.4.5", []) == "version [address]"
 
 
 def test_scrub_known_entity_ids_only() -> None:
@@ -187,3 +195,41 @@ async def test_name_parts_and_users_are_scrubbed(hass: HomeAssistant) -> None:
     )
     for leak in ("Alice", "Bob", "light.lamp"):
         assert leak not in text
+
+
+def test_names_with_possessive_or_number_are_scrubbed() -> None:
+    for text in ("Annas Lampe", "Anna's lamp", "Anna\u2019s lamp", "Anna2 lamp"):
+        assert "Anna" not in scrub(text, ["Anna"]), text
+    # A different word that merely starts with the name is left alone.
+    assert scrub("Annabelle", ["Anna"]) == "Annabelle"
+
+
+async def test_chinese_given_name_is_scrubbed(hass: HomeAssistant) -> None:
+    hass.states.async_set("person.a", "home", {"friendly_name": "王小明"})
+    hass.states.async_set("person.b", "home", {"friendly_name": "欧阳娜娜"})
+    names = resident_names(hass)
+    assert {"王小明", "小明", "欧阳娜娜", "娜娜"} <= set(names)
+    text = scrub_for(hass, "小明的灯 和 娜娜房间")
+    assert "小明" not in text
+    assert "娜娜" not in text
+
+
+def test_known_ids_next_to_capitals_and_digits_are_scrubbed() -> None:
+    ids = {"light.kitchen", "light.kitchen_2"}
+    assert scrub("Xlight.kitchen 2light.kitchen light.kitchen_2", [], ids) == (
+        "Xa device 2a device a device"
+    )
+    # Part of a longer lowercase id is not a known id.
+    assert scrub("mylight.kitchen", [], ids) == "mylight.kitchen"
+
+
+async def test_disabled_entity_ids_are_scrubbed(hass: HomeAssistant) -> None:
+    er.async_get(hass).async_get_or_create(
+        "light",
+        "test",
+        "hidden-1",
+        suggested_object_id="hidden_lamp",
+        disabled_by=er.RegistryEntryDisabler.USER,
+    )
+    assert hass.states.get("light.hidden_lamp") is None
+    assert scrub_for(hass, "was light.hidden_lamp") == "was a device"

@@ -240,6 +240,8 @@ class RoomController:
         self.enabled = enabled
         if enabled:
             await self._take_automations()
+            if self._stopped:
+                return
             await self._debouncer.async_call()
         else:
             await self._release_automations()
@@ -379,6 +381,12 @@ class RoomController:
             return
         except JevError as err:
             await self._failed(str(err))
+            return
+        except Exception as err:
+            # A malformed reply (bad JSON, an HTTP-date Retry-After) is still a failed
+            # call; it must count towards degrading, or the room goes quiet with its
+            # automations held off. CancelledError is not an Exception and still stops us.
+            await self._failed(repr(err))
             return
         # The room may have been switched off or unloaded while Jev was thinking.
         if not self.enabled or self._stopped:
@@ -542,7 +550,11 @@ class RoomController:
                 taken = self.runtime.taken.setdefault(self.subentry_id, [])
                 if automation not in taken:
                     taken.append(automation)
-                self.runtime.async_save()
+                await self.runtime.async_save_now()
+                if not self.in_control:
+                    taken.remove(automation)
+                    self.runtime.async_save()
+                    return
                 if not await self._call_automation("turn_off", automation):
                     taken.remove(automation)
                     self.runtime.async_save()

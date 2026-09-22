@@ -1,6 +1,6 @@
 # Jev Autopilot — design
 
-Date: 2026-09-22. Status: approved ("全部完成全部采用最佳实践").
+Date: 2026-09-22. Status: implemented in 0.1.0; where this document and the code disagree, the code and README win.
 
 ## 1. Purpose and positioning
 
@@ -30,7 +30,8 @@ config entry (API key, base_url, model)          options: preset, notify targets
      ├── state.py     builds the plain-text state for Jev (no ids leaked)
      ├── engine.py    pure Python: questions + answers -> actions (no HA imports)
      ├── executes direct-tier actions with its own Context
-     └── confirm.py   actionable mobile_app notifications for confirm-tier actions
+     └── runtime.py   shared budget, stored takeovers, actionable mobile_app
+                      notifications for confirm-tier actions
 ```
 
 ### 2.1 Configuration (UI only)
@@ -103,7 +104,7 @@ Only automations the user listed are touched.
 
 - Timeout 20 s. One retry for 429 (honouring `retry_after`, capped at 30 s), 529 and
   connection errors.
-- 401 starts reauth; the room pauses.
+- 401 starts reauth; every room hands its automations back until the key is fixed.
 - 422 is a bug in question construction: logged with the offending question keys,
   counted as a failure.
 - Three consecutive failed cycles mark the room **degraded**: devices hold their

@@ -123,7 +123,8 @@
       "error": {
         "no_entities": "Select at least one device to control.",
         "duplicate_entity": "A device can only be in one list.",
-        "entity_in_other_room": "This device already belongs to another room."
+        "entity_in_other_room": "This device already belongs to another room.",
+        "automation_in_other_room": "This automation is already replaced by another room."
       },
       "abort": {
         "reconfigure_successful": "Re-configuration was successful"

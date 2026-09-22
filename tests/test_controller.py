@@ -574,3 +574,45 @@ async def test_enable_after_unload_does_nothing(hass, jev, calls) -> None:
     offs = len(calls["auto_off"])
     await controller.async_set_enabled(True)
     assert len(calls["auto_off"]) == offs
+
+
+async def test_malformed_reply_counts_as_failure(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    jev.error = ValueError("Retry-After: Wed, 21 Oct 2026 07:28:00 GMT")
+    for _ in range(3):
+        await controller.async_run()
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.living_room_status").state == "degraded"
+    assert [c.data["entity_id"] for c in calls["auto_on"]] == ["automation.old_lights"]
+
+
+async def test_run_tap_after_switch_off_does_nothing(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    await controller.async_run()
+    await hass.async_block_till_done()
+    run = calls["notify"][0].data["data"]["actions"][0]["action"]
+    await controller.async_set_enabled(False)
+    hass.bus.async_fire("mobile_app_notification_action", {"action": run})
+    await hass.async_block_till_done()
+    assert calls["lock"] == []
+
+
+async def test_takeover_is_on_disk_before_turn_off(
+    hass, jev, calls, hass_storage
+) -> None:
+    entry, controller = await setup(hass)
+    await controller.async_set_enabled(False)
+    await hass.async_block_till_done()
+    gate = asyncio.Event()
+    held = _hold_turn_off(hass, gate)
+    take = hass.async_create_task(controller.async_set_enabled(True))
+    await asyncio.wait_for(held.wait(), 5)
+    try:
+        (stored,) = [v for k, v in hass_storage.items() if k.startswith(DOMAIN)]
+        assert stored["data"]["taken"] == {
+            controller.subentry_id: ["automation.old_lights"]
+        }
+    finally:
+        gate.set()
+        await asyncio.wait_for(take, 5)
+        await hass.async_block_till_done()

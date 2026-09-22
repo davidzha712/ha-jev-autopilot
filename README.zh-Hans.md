@@ -31,11 +31,12 @@ Jev 是一个"System One"决策模型：读一段对现状的描述，对是非�
   Jev 连续 3 次不可达、当日预算用完、或 API key 被拒时重新打开。
 - **隐私。** 发给 Jev 的文本包含设备名、状态和传感器数值，住户只以人数出现（"3 人中 2 人在家"）。
   发送前，设备名、房间名、传感器状态、问题文本和备注里：
-  - Home Assistant 已知的 entity id 替换成 "a device"；
-  - 住户和 Home Assistant 用户的姓名（全名，或其中两个字符及以上的单词）替换成 "a resident"，不区分大小写；
-  - IPv4 地址替换成 "[address]"。
+  - Home Assistant 已知的 entity id（包括已禁用的）替换成 "a device"；
+  - 住户和 Home Assistant 用户的姓名替换成 "a resident"，不区分大小写：全名、其中两个字符及以上的单词，
+    以及中文名的名字部分（王小明里的"小明"）。名字后面跟所有格或数字也能识别（"Annas Lampe"、"Bob2"）；
+  - IPv4 地址，连同包住它的更长的点分数字串，替换成 "[address]"。
 
-  其他你写进名称或备注的个人信息会原样发送。没有 friendly name 的设备，会以 Home Assistant
+  和其他字母连写的名字（"BobPC"）识别不了。其他你写进名称或备注的个人信息会原样发送。没有 friendly name 的设备，会以 Home Assistant
   从 entity id 推出的名字发送。
 
 ## 安装
