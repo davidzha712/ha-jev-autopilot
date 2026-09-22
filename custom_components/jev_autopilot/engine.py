@@ -320,8 +320,16 @@ def decide(
     by_id = {e.entity_id: e for e in entities}
     grouped: dict[str, dict[str, Answer]] = {}
     for key, (kind, entity_id) in plan.index.items():
-        if key in answers:
-            grouped.setdefault(entity_id, {})[kind] = answers[key]
+        answer = answers.get(key)
+        if answer is None:
+            continue
+        # A choice outside the options we offered cannot be acted on; drop it.
+        question = plan.questions.get(key)
+        if isinstance(answer, ChoiceAnswer) and (
+            not isinstance(question, Choice) or answer.choice not in question.criteria
+        ):
+            continue
+        grouped.setdefault(entity_id, {})[kind] = answer
 
     decision = Decision()
     for entity_id, got in grouped.items():

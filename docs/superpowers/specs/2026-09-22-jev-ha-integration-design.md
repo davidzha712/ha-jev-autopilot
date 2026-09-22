@@ -105,6 +105,11 @@ Only automations the user listed are touched.
 - Timeout 20 s. One retry for 429 (honouring `retry_after`, capped at 30 s), 529 and
   connection errors.
 - 401 starts reauth; every room hands its automations back until the key is fixed.
+- A reply that cannot be acted on (a choice outside the offered options is dropped;
+  anything else raised while deciding or acting) counts as a failure. The failure
+  count resets only after a run completes.
+- Home Assistant shutdown hands every room's automations back; they are taken again
+  after the next start.
 - 422 is a bug in question construction: logged with the offending question keys,
   counted as a failure.
 - Three consecutive failed cycles mark the room **degraded**: devices hold their

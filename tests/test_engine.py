@@ -228,3 +228,13 @@ def test_level_parsers():
             parse_int_levels(bad)
     with pytest.raises(ValueError):
         parse_heating_levels("off, 50")
+
+
+def test_choice_outside_the_offered_options_is_ignored():
+    d = run(
+        [LIGHT],
+        {("on", "light.a"): NoulAnswer(0.9), ("ct", "light.a"): choice("warm")},
+    )
+    assert "color_temp_kelvin" not in d.actions[0].data
+    trv = EntitySnapshot("climate.t", "TRV", "heat", hvac_modes=("off", "heat"))
+    assert run([trv], {("heat", "climate.t"): choice("cosy")}).actions == []

@@ -11,6 +11,7 @@ from collections import deque
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
+import voluptuous as vol
 from homeassistant.const import CONF_NAME
 from homeassistant.core import (
     CALLBACK_TYPE,
@@ -77,7 +78,9 @@ from .state import build_state, scrub_for, snapshot
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigSubentry
+    from jevclient import JevResponse
 
+    from .engine import EntitySnapshot, Plan
     from .runtime import Runtime
 
 _LOGGER = logging.getLogger(__package__)
@@ -365,9 +368,9 @@ class RoomController:
         except JevAuthError:
             if self._stopped:
                 return
-            self.auth_failed = True
-            await self._release_automations()
-            self._notify_entities()
+            # The key is shared, so every room hands back now, not at its next call.
+            for room in list(self.runtime.rooms.values()):
+                await room.async_auth_failed()
             self.runtime.entry.async_start_reauth(self.hass)
             return
         except JevValidationError as err:
@@ -391,11 +394,17 @@ class RoomController:
         # The room may have been switched off or unloaded while Jev was thinking.
         if not self.enabled or self._stopped:
             return
-        await self._succeeded()
-        # A success clears degraded; a pause or auth failure meanwhile still holds.
-        if not self.in_control:
-            return
+        try:
+            await self._act(plan, snapshots, response)
+        except Exception as err:
+            # A reply we cannot act on, or a service call failing in a way we did not
+            # expect, is a failed run too; otherwise the room keeps paying for calls
+            # with its automations held off and never degrades.
+            await self._failed(repr(err))
 
+    async def _act(
+        self, plan: Plan, snapshots: list[EntitySnapshot], response: JevResponse
+    ) -> None:
         now = time.time()
         self.history.blocked = self.runtime.blocked_keys(now)
         decision = decide(
@@ -408,6 +417,11 @@ class RoomController:
             now=now,
             confirm_threshold=self.confirm_threshold,
         )
+        await self._recover()
+        # A recovery clears degraded; a pause or auth failure meanwhile still holds.
+        if not self.in_control:
+            self.failures = 0
+            return
         names = {s.entity_id: s.name for s in snapshots}
         done: list[str] = []
         for action in decision.actions:
@@ -428,6 +442,8 @@ class RoomController:
 
         if self._stopped:
             return
+        # Only a run that got all the way through counts as a success.
+        self.failures = 0
         self.last = {
             "at": dt_util.utcnow().isoformat(),
             "summary": "; ".join(done) if done else "hold",
@@ -453,7 +469,7 @@ class RoomController:
                 blocking=True,
                 context=context,
             )
-        except (HomeAssistantError, ValueError) as err:
+        except (HomeAssistantError, ValueError, vol.Invalid) as err:
             _LOGGER.warning(
                 "%s.%s on %s failed: %s",
                 action.domain,
@@ -513,8 +529,15 @@ class RoomController:
             )
         self._notify_entities()
 
-    async def _succeeded(self) -> None:
-        self.failures = 0
+    async def async_auth_failed(self) -> None:
+        """The API key was rejected: hand this room back until the key is fixed."""
+        if self._stopped or self.auth_failed:
+            return
+        self.auth_failed = True
+        await self._release_automations()
+        self._notify_entities()
+
+    async def _recover(self) -> None:
         if self.degraded:
             _LOGGER.info("Jev reachable again for %s, taking control back", self.name)
             self.degraded = False

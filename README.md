@@ -36,8 +36,9 @@ detection and the confirmation tier all live in plain Python with tests.
   automation) is detected by its context and left alone for the preset's hold time.
 - **Hands back cleanly.** Existing automations you list for a room are turned off
   while the autopilot runs it and turned back on when you switch it off, when Jev is
-  unreachable 3 times in a row, when the daily budget is spent, or when the API key
-  is rejected.
+  unreachable 3 times in a row or its reply cannot be acted on, when the daily
+  budget is spent, when the API key is rejected, or when Home Assistant shuts down.
+  They are taken again once Home Assistant has started.
 - **Private by construction.** The text sent to Jev contains device names, states
   and sensor values. Residents appear only as a count ("2 of 3 at home"). Before
   anything is sent, including device names, room names, sensor states, the
@@ -55,6 +56,10 @@ detection and the confirmation tier all live in plain Python with tests.
   detail you type into a name or a note is sent as written. A
   device without a friendly name is sent under a name Home Assistant derives from
   its entity id.
+
+  *Ask first* notifications go to your own phone, not to Jev, and name the room and
+  the device as you wrote them. The mobile app delivers them through Apple's or
+  Google's push service.
 
 ## Installation
 

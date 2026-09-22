@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_API_KEY, Platform
+from homeassistant.const import CONF_API_KEY, EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.start import async_at_started
@@ -57,6 +57,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: JevAutopilotConfigEntry)
         await runtime.async_release_orphans()
 
     entry.async_on_unload(async_at_started(hass, _release_orphans))
+
+    # Shutdown does not unload config entries, so hand back here. If the integration
+    # then fails to load on the next start, the automations are already running.
+    async def _on_stop(_event: Event) -> None:
+        for room in runtime.rooms.values():
+            await room.async_stop(release=True)
+        await runtime.async_flush()
+
+    # A plain listener: stop fires once, and unloading after a stop must not fail to
+    # remove a one-shot listener that is already gone.
+    entry.async_on_unload(hass.bus.async_listen(EVENT_HOMEASSISTANT_STOP, _on_stop))
     return True
 
 

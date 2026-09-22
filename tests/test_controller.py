@@ -5,10 +5,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from typing import Any
+from unittest.mock import patch
 
 import pytest
+import voluptuous as vol
 from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import Context, Event, HomeAssistant, ServiceCall
 from homeassistant.helpers import issue_registry as ir
 from jevclient import JevAuthError, JevConnectionError, NoulAnswer
@@ -616,3 +619,71 @@ async def test_takeover_is_on_disk_before_turn_off(
         gate.set()
         await asyncio.wait_for(take, 5)
         await hass.async_block_till_done()
+
+
+async def test_failure_after_the_reply_still_degrades(hass, jev, calls) -> None:
+    entry, controller = await setup(hass)
+    with patch(
+        "custom_components.jev_autopilot.controller.decide",
+        side_effect=ValueError("invalid literal for int()"),
+    ):
+        for _ in range(3):
+            await controller.async_run()
+        await hass.async_block_till_done()
+    assert controller.failures == 3
+    assert hass.states.get("sensor.living_room_status").state == "degraded"
+    assert [c.data["entity_id"] for c in calls["auto_on"]] == ["automation.old_lights"]
+
+
+async def test_invalid_service_data_is_a_failed_call_not_a_crash(
+    hass, jev, calls
+) -> None:
+    async def reject(call: ServiceCall) -> None:
+        raise vol.Invalid("bad data")
+
+    hass.services.async_register("light", "turn_on", reject)
+    entry, controller = await setup(hass)
+    await controller.async_run()
+    await hass.async_block_till_done()
+    assert controller.failures == 0
+    assert hass.states.get("sensor.living_room_status").state == "ok"
+
+
+async def test_stop_hands_back_and_persists(
+    hass, jev, calls, hass_storage, caplog
+) -> None:
+    entry, controller = await setup(hass)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
+    await hass.async_block_till_done()
+    assert [c.data["entity_id"] for c in calls["auto_on"]] == ["automation.old_lights"]
+    (stored,) = [v for k, v in hass_storage.items() if k.startswith(DOMAIN)]
+    assert not any(stored["data"]["taken"].values())
+    # Unloading afterwards does not hand back a second time.
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert len(calls["auto_on"]) == 1
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]
+
+
+async def test_auth_error_hands_back_every_room(hass, jev, calls) -> None:
+    hass.states.async_set("automation.bedroom", "on")
+    entry = make_entry(
+        room(**DEFAULT_ROOM),
+        room(
+            "Bedroom", lights=["light.ceiling"], yield_automations=["automation.bedroom"]
+        ),
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    living, bedroom = entry.runtime_data.rooms.values()
+    jev.error = JevAuthError("revoked")
+    await living.async_run()
+    await hass.async_block_till_done()
+    assert sorted(c.data["entity_id"] for c in calls["auto_on"]) == [
+        "automation.bedroom",
+        "automation.old_lights",
+    ]
+    assert bedroom.auth_failed
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert [f["context"]["source"] for f in flows] == ["reauth"]
